@@ -1,0 +1,6 @@
+Planet,Spectrum,Feature,Wavelength,Science_Goal,Recommended_PDS_Filter
+SATURN,IR,DIP (Minimum),1.156 um,Methane Band 1 (Deep Cloud),ch4_u / ch4_js
+SATURN,IR,DIP (Minimum),1.378 um,Methane Band 2 (Storm Layer),ch4_u / ch4_js
+SATURN,IR,DIP (Minimum),2.213 um,Primary Methane Absorption (Rings/Storms),ch4_u / ch4_js
+SATURN,UV,PEAK (Maximum),1586.3 Å,Auroral Emission Lines,uv / violet
+SATURN,UV,PEAK (Maximum),2235.4 Å,High-Altitude Haze,uv / violet

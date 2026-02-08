@@ -1,0 +1,6 @@
+Planet,Spectrum,Feature,Wavelength,Science_Goal,Recommended_PDS_Filter
+URANUS,IR,DIP (Minimum),1.112 um,Methane Band 1 (Deep Cloud),ch4_u / ch4_js
+URANUS,IR,DIP (Minimum),1.335 um,Methane Band 2 (Storm Layer),ch4_u / ch4_js
+URANUS,IR,DIP (Minimum),1.708 um,Primary Methane Absorption (Rings/Storms),ch4_u / ch4_js
+URANUS,UV,PEAK (Maximum),1593.0 Å,Auroral Emission Lines,uv / violet
+URANUS,UV,PEAK (Maximum),2579.4 Å,High-Altitude Haze,uv / violet
