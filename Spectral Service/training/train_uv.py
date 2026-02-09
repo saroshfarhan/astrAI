@@ -55,7 +55,8 @@ def load_pkl_spectrum(p: Path) -> Tuple[str, np.ndarray, np.ndarray]:
     with open(p, "rb") as f:
         d = pickle.load(f)
     target = str(d.get("target", p.stem)).upper()
-    w = np.asarray(d["wavelength"], dtype=float)
+    # Handle both 'wavelength' and 'wave' keys
+    w = np.asarray(d.get("wavelength", d.get("wave")), dtype=float)
     y = np.asarray(d["flux"], dtype=float)
     m = np.isfinite(w) & np.isfinite(y)
     w, y = w[m], y[m]
@@ -137,6 +138,11 @@ def train_one(
             bad += 1
             if bad >= patience:
                 break
+
+    # If best_state is None (no improvement), use current model state
+    if best_state is None:
+        best_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
+        best_loss = eval_val()
 
     # inference on a reference real planet (Jupiter)
     model.load_state_dict(best_state)

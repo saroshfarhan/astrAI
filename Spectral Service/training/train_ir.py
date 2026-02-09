@@ -1,7 +1,7 @@
 # spectral_service/training/train_ir.py
 from __future__ import annotations
 
-import json, pickle, time
+import json, pickle, time, sys
 from pathlib import Path
 from typing import Dict, Tuple
 import numpy as np
@@ -11,10 +11,12 @@ from torch.utils.data import DataLoader, TensorDataset
 
 import optuna
 import mlflow
-from .mlflow_utils import setup_mlflow, safe_log_param, safe_log_metric
 
+# Add the training directory to sys.path for imports
+sys.path.insert(0, str(Path(__file__).parent))
 
-from .synthetic_generator import (
+from mlflow_utils import setup_mlflow, safe_log_param, safe_log_metric
+from synthetic_generator import (
     IR_SPECIES, IR_BANDS, DEFAULT_PRIORS_IR,
     build_synthetic_from_planet,
 )
@@ -48,7 +50,8 @@ def load_pkl_spectrum(p: Path) -> Tuple[str, np.ndarray, np.ndarray]:
     with open(p, "rb") as f:
         d = pickle.load(f)
     target = str(d.get("target", p.stem)).upper()
-    w = np.asarray(d["wavelength"], dtype=float)
+    # Handle both 'wavelength' and 'wave' keys
+    w = np.asarray(d.get("wavelength", d.get("wave")), dtype=float)
     y = np.asarray(d["flux"], dtype=float)
     m = np.isfinite(w) & np.isfinite(y)
     w, y = w[m], y[m]
@@ -131,13 +134,18 @@ def train_one(
             if bad >= patience:
                 break
 
+    # If best_state is None (no improvement), use current model state
+    if best_state is None:
+        best_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
+        best_loss = eval_val()
+
     model.load_state_dict(best_state)
     model.eval()
 
     # reference logits on Saturn if available
     if IR_PKLS["SATURN"].exists():
         _, ws, fs = load_pkl_spectrum(IR_PKLS["SATURN"])
-        from .synthetic_generator import resample_to_fixed, make_channels
+        from synthetic_generator import resample_to_fixed, make_channels
         ws_fix, fs_fix = resample_to_fixed(ws, fs, n_resample)
         Xs = make_channels(ws_fix, fs_fix, win=params["baseline_win"])
         xt = torch.tensor(Xs[None, ...], dtype=torch.float32).to(DEVICE)
