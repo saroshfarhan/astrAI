@@ -1,5 +1,9 @@
+from agent import run_pipeline
+
+
 def main():
-    print("Hello from astrai!")
+    result = run_pipeline("example.fits", modality="spectral")
+    print(result)
 
 
 if __name__ == "__main__":
