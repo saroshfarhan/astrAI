@@ -10,6 +10,9 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 import optuna
+import mlflow
+from .mlflow_utils import setup_mlflow, safe_log_param, safe_log_metric
+
 
 from .synthetic_generator import (
     IR_SPECIES, IR_BANDS, DEFAULT_PRIORS_IR,
@@ -213,47 +216,119 @@ def objective(trial: optuna.Trial) -> float:
 
 
 def main():
+    import mlflow
+
     print("DEVICE:", DEVICE)
-    print("IR planets:", [k for k, v in IR_PKLS.items() if v.exists()])
+    active_planets = [k for k, v in IR_PKLS.items() if v.exists()]
+    print("IR planets:", active_planets)
 
-    study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=N_TRIALS)
+    # Optional: set once globally in the file
+    # mlflow.set_experiment("spectral-service")
 
-    best = study.best_params
-    print("\nBest params:", best)
-    print("Ref probs:", study.best_trial.user_attrs.get("ref_probs", {}))
+    with mlflow.start_run(run_name="train-ir-mlp"):
 
-    t0 = time.time()
-    X_train, Y_train, X_val, Y_val = build_multi_planet_dataset(
-        win=best["baseline_win"],
-        n_per_planet=N_SYNTH_PER_PLANET_FINAL,
-        seed0=2999
-    )
-    vloss, state, _ = train_one(
-        X_train, Y_train, X_val, Y_val,
-        params=best,
-        n_resample=N_RESAMPLE,
-        epochs=EPOCHS_FINAL,
-        patience=PATIENCE_FINAL
-    )
+        # ---------- params (static) ----------
+        try:
+            mlflow.log_param("domain", "IR")
+            mlflow.log_param("device", DEVICE)
+            mlflow.log_param("n_resample", N_RESAMPLE)
+            mlflow.log_param("n_trials", N_TRIALS)
+            mlflow.log_param("n_synth_per_planet_final", N_SYNTH_PER_PLANET_FINAL)
+            mlflow.log_param("epochs_final", EPOCHS_FINAL)
+            mlflow.log_param("patience_final", PATIENCE_FINAL)
+            mlflow.log_param("planets_used", ",".join(active_planets))
+            mlflow.log_param("species_count", len(IR_SPECIES))
+            mlflow.log_param("species", ",".join(IR_SPECIES))
+        except Exception:
+            pass
 
-    ir_pt = MODEL_DIR / "ir_mlp.pt"
-    ir_cfg = MODEL_DIR / "ir_config.json"
+        # ---------- Optuna tuning span ----------
+        t_opt = time.time()
+        with mlflow.start_span(name="optuna_tuning") as span:
+            study = optuna.create_study(direction="minimize")
+            study.optimize(objective, n_trials=N_TRIALS)
 
-    torch.save({"state_dict": state}, ir_pt)
-    ir_cfg.write_text(json.dumps({
-        "domain": "IR",
-        "species": IR_SPECIES,
-        "bands": IR_BANDS,
-        "best_params": best,
-        "n_resample": N_RESAMPLE,
-        "val_loss": vloss,
-    }, indent=2))
+            opt_time = time.time() - t_opt
+            best = study.best_params
 
-    print("\nSaved:", ir_pt)
-    print("Saved:", ir_cfg)
-    print("Final val_loss:", round(vloss, 4), "| time:", round(time.time() - t0, 2), "s")
+            span.set_attribute("best_objective", float(study.best_value))
+            span.set_attribute("optuna_time_sec", float(opt_time))
 
+            try:
+                mlflow.log_metric("best_objective", float(study.best_value))
+                mlflow.log_metric("optuna_time_sec", float(opt_time))
+
+                for k, v in best.items():
+                    mlflow.log_param(f"best_{k}", v)
+
+                ref_probs = study.best_trial.user_attrs.get("ref_probs", {})
+                if ref_probs:
+                    mlflow.log_param(
+                        "ref_probs_top",
+                        ", ".join([f"{k}:{round(float(v),3)}" for k, v in sorted(ref_probs.items(), key=lambda x: -x[1])[:8]])
+                    )
+            except Exception:
+                pass
+
+        print("\nBest params:", best)
+        print("Ref probs:", study.best_trial.user_attrs.get("ref_probs", {}))
+
+        # ---------- Final training span ----------
+        t0 = time.time()
+        with mlflow.start_span(name="final_training") as span:
+            X_train, Y_train, X_val, Y_val = build_multi_planet_dataset(
+                win=best["baseline_win"],
+                n_per_planet=N_SYNTH_PER_PLANET_FINAL,
+                seed0=2999
+            )
+
+            try:
+                mlflow.log_metric("train_samples", int(len(X_train)))
+                mlflow.log_metric("val_samples", int(len(X_val)))
+            except Exception:
+                pass
+
+            vloss, state, _ = train_one(
+                X_train, Y_train, X_val, Y_val,
+                params=best,
+                n_resample=N_RESAMPLE,
+                epochs=EPOCHS_FINAL,
+                patience=PATIENCE_FINAL
+            )
+
+            train_time = time.time() - t0
+            span.set_attribute("final_val_loss", float(vloss))
+            span.set_attribute("train_time_sec", float(train_time))
+
+            try:
+                mlflow.log_metric("final_val_loss", float(vloss))
+                mlflow.log_metric("train_time_sec", float(train_time))
+            except Exception:
+                pass
+
+        # ---------- Save artifacts ----------
+        ir_pt = MODEL_DIR / "ir_mlp.pt"
+        ir_cfg = MODEL_DIR / "ir_config.json"
+
+        torch.save({"state_dict": state}, ir_pt)
+        ir_cfg.write_text(json.dumps({
+            "domain": "IR",
+            "species": IR_SPECIES,
+            "bands": IR_BANDS,
+            "best_params": best,
+            "n_resample": N_RESAMPLE,
+            "val_loss": float(vloss),
+        }, indent=2))
+
+        print("\nSaved:", ir_pt)
+        print("Saved:", ir_cfg)
+        print("Final val_loss:", round(float(vloss), 4), "| time:", round(time.time() - t0, 2), "s")
+
+        try:
+            mlflow.log_artifact(str(ir_pt))
+            mlflow.log_artifact(str(ir_cfg))
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     main()
