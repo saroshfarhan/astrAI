@@ -1,5 +1,11 @@
+import sys
+from pathlib import Path
 from fastapi import FastAPI
-from .routers.analyze import router as analyze_router
+
+# Add the app directory to sys.path for imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+from routers.analyze import router as analyze_router
 
 app = FastAPI(title="Spectral Service", version="0.1.0")
 

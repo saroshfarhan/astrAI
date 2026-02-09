@@ -7,7 +7,8 @@ from typing import Tuple, Dict, Any
 def load_pkl_spectrum(path: str) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     with open(path, "rb") as f:
         obj = pickle.load(f)
-    w = np.asarray(obj["wavelength"], dtype=float)
+    # Handle both 'wavelength' and 'wave' keys
+    w = np.asarray(obj.get("wavelength", obj.get("wave")), dtype=float)
     flux = np.asarray(obj["flux"], dtype=float)
 
     m = np.isfinite(w) & np.isfinite(flux)

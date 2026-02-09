@@ -1,13 +1,16 @@
 # spectral_service/training/evaluate_real.py
 from __future__ import annotations
 
-import json, pickle
+import json, pickle, sys
 from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
 
-from .synthetic_generator import resample_to_fixed, make_channels
+# Add the training directory to sys.path for imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+from synthetic_generator import resample_to_fixed, make_channels
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "models"
@@ -37,7 +40,8 @@ class MLP(nn.Module):
 def load_pkl(p: Path):
     with open(p, "rb") as f:
         d = pickle.load(f)
-    w = np.asarray(d["wavelength"], dtype=float)
+    # Handle both 'wavelength' and 'wave' keys
+    w = np.asarray(d.get("wavelength", d.get("wave")), dtype=float)
     y = np.asarray(d["flux"], dtype=float)
     m = np.isfinite(w) & np.isfinite(y)
     w, y = w[m], y[m]

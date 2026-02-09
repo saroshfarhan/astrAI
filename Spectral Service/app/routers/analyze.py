@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import time
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -10,10 +11,13 @@ import torch.nn as nn
 from fastapi import APIRouter, UploadFile, File, HTTPException
 import mlflow
 
-from ..schemas import AnalyzeSpectrumResponse, Prediction
-from ..utils.io import load_spectrum
-from ..utils.preprocess import resample_to_fixed, make_channels
-from ..utils.fusion import fuse_uv_ir
+# Add the app directory to sys.path for imports
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from schemas import AnalyzeSpectrumResponse, Prediction
+from utils.io import load_spectrum
+from utils.preprocess import resample_to_fixed, make_channels
+from utils.fusion import fuse_uv_ir
 
 router = APIRouter()
 
