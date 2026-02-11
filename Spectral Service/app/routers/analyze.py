@@ -18,6 +18,7 @@ from schemas import AnalyzeSpectrumResponse, Prediction
 from utils.io import load_spectrum
 from utils.preprocess import resample_to_fixed, make_channels
 from utils.fusion import fuse_uv_ir
+from utils.domain_detector import detect_domain, get_wavelength_unit
 
 router = APIRouter()
 
@@ -119,17 +120,43 @@ async def analyze_spectrum(file: UploadFile = File(...), top_k: int = 8):
             except Exception:
                 pass
 
-        # ---- infer ----
+        # ---- detect domain (UV vs IR) ----
+        detected_domain = detect_domain(w, f)
+        wavelength_unit = get_wavelength_unit(w)
+
+        try:
+            mlflow.log_param("detected_domain", detected_domain)
+            mlflow.log_param("wavelength_unit", wavelength_unit)
+            mlflow.log_metric("wavelength_min", float(w.min()))
+            mlflow.log_metric("wavelength_max", float(w.max()))
+            mlflow.log_metric("wavelength_median", float(np.median(w)))
+        except Exception:
+            pass
+
+        # ---- infer (only run appropriate model) ----
         uv_probs = None
         ir_probs = None
 
         with mlflow.start_span(name="inference") as sp3:
-            if UV_MODEL is not None and UV_CFG is not None:
+            # Run UV model only if detected as UV
+            if detected_domain == "UV" and UV_MODEL is not None and UV_CFG is not None:
                 uv_probs = _infer(UV_MODEL, UV_CFG, w, f)
+                sp3.set_attribute("model_used", "UV")
 
-            if IR_MODEL is not None and IR_CFG is not None:
+            # Run IR model only if detected as IR
+            elif detected_domain == "IR" and IR_MODEL is not None and IR_CFG is not None:
                 ir_probs = _infer(IR_MODEL, IR_CFG, w, f)
+                sp3.set_attribute("model_used", "IR")
 
+            # Unknown domain - try both (fallback)
+            elif detected_domain == "UNKNOWN":
+                if UV_MODEL is not None and UV_CFG is not None:
+                    uv_probs = _infer(UV_MODEL, UV_CFG, w, f)
+                if IR_MODEL is not None and IR_CFG is not None:
+                    ir_probs = _infer(IR_MODEL, IR_CFG, w, f)
+                sp3.set_attribute("model_used", "BOTH (unknown domain)")
+
+            sp3.set_attribute("detected_domain", detected_domain)
             sp3.set_attribute("uv_loaded", UV_MODEL is not None)
             sp3.set_attribute("ir_loaded", IR_MODEL is not None)
 

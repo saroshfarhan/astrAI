@@ -281,7 +281,7 @@ if uploaded_file:
                         {context}
                         """
                         
-                        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.3)
+                        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)
                         #llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-exp", temperature=0.3)
                         response = llm.invoke([
                             SystemMessage(content=system_prompt),

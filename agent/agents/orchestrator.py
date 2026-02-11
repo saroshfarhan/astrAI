@@ -32,8 +32,7 @@ class OrchestratorAgent(BaseAgent):
         """
         super().__init__("OrchestratorAgent")
         self.llm = llm or ChatGoogleGenerativeAI(
-            #model="gemini-2.0-flash-exp",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             temperature=0
         )
         self.prompt = self._load_prompt()
@@ -98,32 +97,40 @@ Respond with JSON only:
             "modality": state.get("modality", "unknown")
         }
         
-        try:
-            # Create MLflow span for LLM routing decision
-            with mlflow.start_span(name="llm_routing_decision") as span:
-                span.set_attribute("file_extension", file_ext)
-                span.set_attribute("modality", state.get("modality", "unknown"))
-                
-                # Get routing decision from LLM
-                response = self.llm.invoke([
-                    ("system", self.prompt),
-                    ("human", json.dumps(context, default=str))
-                ])
-                
-                # Parse LLM response
-                decision = json.loads(response.content)
-                
-                # Log LLM decision to span
-                span.set_attribute("llm_route_decision", decision.get("route", "unknown"))
-                span.set_attribute("llm_reasoning", decision.get("reasoning", ""))
-                
-                # Log metrics
-                try:
-                    mlflow.log_metric("orchestrator_llm_success", 1)
-                except Exception:
-                    pass
-            
-        except Exception as exc:
+        # Use fallback routing (LLM disabled)
+        if self.llm is None:
+            decision = self._fallback_routing(file_ext, Path(input_path).name)
+            try:
+                mlflow.log_metric("orchestrator_fallback_used", 1)
+            except Exception:
+                pass
+        else:
+            try:
+                # Create MLflow span for LLM routing decision
+                with mlflow.start_span(name="llm_routing_decision") as span:
+                    span.set_attribute("file_extension", file_ext)
+                    span.set_attribute("modality", state.get("modality", "unknown"))
+
+                    # Get routing decision from LLM
+                    response = self.llm.invoke([
+                        ("system", self.prompt),
+                        ("human", json.dumps(context, default=str))
+                    ])
+
+                    # Parse LLM response
+                    decision = json.loads(response.content)
+
+                    # Log LLM decision to span
+                    span.set_attribute("llm_route_decision", decision.get("route", "unknown"))
+                    span.set_attribute("llm_reasoning", decision.get("reasoning", ""))
+
+                    # Log metrics
+                    try:
+                        mlflow.log_metric("orchestrator_llm_success", 1)
+                    except Exception:
+                        pass
+
+            except Exception as exc:
             # Log LLM failure
             try:
                 mlflow.log_metric("orchestrator_llm_failure", 1)

@@ -34,8 +34,7 @@ class ReporterAgent(BaseAgent):
         """
         super().__init__("ReporterAgent")
         self.llm = llm or ChatGoogleGenerativeAI(
-            #model="gemini-2.0-flash-exp"
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             temperature=0.3
         )
     
