@@ -1,4 +1,4 @@
-# spectral_service/training/train_uv.py
+"""Train UV spectral model with real data + physics-based augmentation."""
 from __future__ import annotations
 
 import json, pickle, time, sys
@@ -12,50 +12,44 @@ from torch.utils.data import DataLoader, TensorDataset
 import optuna
 import mlflow
 
-# Add the training directory to sys.path for imports
+# Add training directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from mlflow_utils import setup_mlflow, safe_log_param, safe_log_metric
-from synthetic_generator import (
-    UV_SPECIES, UV_BANDS, DEFAULT_PRIORS_UV,
-    build_synthetic_from_planet,
-)
+from augmentation import create_augmented_dataset
+from expanded_species import UV_SPECIES_EXPANDED, get_labels_for_planet
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_REAL = ROOT / "data" / "real"
 MODEL_DIR = ROOT / "models"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-UV_PKLS = {
-    "JUPITER": DATA_REAL / "jupiter_uv.pkl",
-    "SATURN":  DATA_REAL / "saturn_uv.pkl",
-    "URANUS":  DATA_REAL / "uranus_uv.pkl",
-    "MARS":    DATA_REAL / "mars_uv.pkl",
-}
-
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Speed knobs
+# ============================================================================
+# CONFIGURATION - ADJUST THESE!
+# ============================================================================
+N_AUGMENT_PER_PLANET = 75  # Number of augmented versions per planet (50-150)
 N_RESAMPLE = 1024
 BATCH = 128
 
-# Optuna budget
-N_TRIALS = 25
-N_SYNTH_PER_PLANET_TUNE = 900
+N_TRIALS = 20  # Optuna trials
 EPOCHS_TUNE = 10
 PATIENCE_TUNE = 3
 
-# Final training
-N_SYNTH_PER_PLANET_FINAL = 2500
-EPOCHS_FINAL = 22
+EPOCHS_FINAL = 25
 PATIENCE_FINAL = 6
 
 
+# ============================================================================
+# DATA LOADING
+# ============================================================================
+
 def load_pkl_spectrum(p: Path) -> Tuple[str, np.ndarray, np.ndarray]:
+    """Load spectrum from pickle file."""
     with open(p, "rb") as f:
         d = pickle.load(f)
     target = str(d.get("target", p.stem)).upper()
-    # Handle both 'wavelength' and 'wave' keys
     w = np.asarray(d.get("wavelength", d.get("wave")), dtype=float)
     y = np.asarray(d["flux"], dtype=float)
     m = np.isfinite(w) & np.isfinite(y)
@@ -64,7 +58,96 @@ def load_pkl_spectrum(p: Path) -> Tuple[str, np.ndarray, np.ndarray]:
     return target, w[idx], y[idx]
 
 
+def detect_uv_files() -> Dict[str, Path]:
+    """Auto-detect UV spectra files."""
+    uv_files = {}
+    for pkl_file in DATA_REAL.glob("*_uv.pkl"):
+        planet_name = pkl_file.stem.replace("_uv", "").upper()
+        uv_files[planet_name] = pkl_file
+    return uv_files
+
+
+# ============================================================================
+# PREPROCESSING
+# ============================================================================
+
+def resample_to_fixed(wave: np.ndarray, flux: np.ndarray, n: int) -> Tuple[np.ndarray, np.ndarray]:
+    """Resample spectrum to fixed number of points."""
+    wave_new = np.linspace(wave.min(), wave.max(), n)
+    flux_new = np.interp(wave_new, wave, flux)
+    return wave_new.astype(np.float32), flux_new.astype(np.float32)
+
+
+def compute_baseline(flux: np.ndarray, win: int = 151) -> np.ndarray:
+    """Compute baseline using Savitzky-Golay filter."""
+    from scipy.signal import savgol_filter
+    n = len(flux)
+    win = max(11, min(win, n - 1))
+    if win % 2 == 0:
+        win += 1
+    baseline = savgol_filter(flux.astype(float), window_length=win, polyorder=3)
+    baseline = np.clip(baseline, np.percentile(baseline, 1), np.percentile(baseline, 99))
+    return (baseline + 1e-12).astype(np.float32)
+
+
+def make_channels(wave: np.ndarray, flux: np.ndarray, baseline_win: int = 151) -> np.ndarray:
+    """Create 3-channel representation: [normalized, 1st derivative, 2nd derivative]."""
+    baseline = compute_baseline(flux, win=baseline_win)
+    r = (flux / baseline) - 1.0
+    r = (r - np.median(r)) / (np.std(r) + 1e-8)
+    d1 = np.gradient(r, wave)
+    d2 = np.gradient(d1, wave)
+    return np.stack([r, d1, d2], axis=0).astype(np.float32)
+
+
+# ============================================================================
+# DATASET PREPARATION
+# ============================================================================
+
+def build_augmented_dataset(win: int, n_augment: int, seed0: int):
+    """Build training dataset with augmentation."""
+    uv_files = detect_uv_files()
+
+    X_all, Y_all = [], []
+
+    for planet_idx, (planet_name, pkl_path) in enumerate(uv_files.items()):
+        # Load real spectrum
+        _, wave_real, flux_real = load_pkl_spectrum(pkl_path)
+
+        # Get labels
+        labels = get_labels_for_planet(planet_name, UV_SPECIES_EXPANDED, domain="UV")
+
+        # Create augmented versions
+        waves_aug, fluxes_aug = create_augmented_dataset(
+            wave_real, flux_real,
+            n_augmentations=n_augment,
+            seed_offset=seed0 + planet_idx
+        )
+
+        # Preprocess each
+        for wave_aug, flux_aug in zip(waves_aug, fluxes_aug):
+            wave_fix, flux_fix = resample_to_fixed(wave_aug, flux_aug, N_RESAMPLE)
+            X = make_channels(wave_fix, flux_fix, win)
+            X_all.append(X)
+            Y_all.append(labels)
+
+    X = np.array(X_all, dtype=np.float32)
+    Y = np.array(Y_all, dtype=np.float32)
+
+    # Shuffle and split
+    rng = np.random.default_rng(seed0 + 999)
+    perm = rng.permutation(len(X))
+    X, Y = X[perm], Y[perm]
+    n_train = int(0.9 * len(X))
+    return X[:n_train], Y[:n_train], X[n_train:], Y[n_train:]
+
+
+# ============================================================================
+# MODEL
+# ============================================================================
+
 class MLP(nn.Module):
+    """Multi-layer perceptron for spectral classification."""
     def __init__(self, n_resample: int, h1: int, h2: int, drop1: float, drop2: float, k: int):
         super().__init__()
         self.net = nn.Sequential(
@@ -87,11 +170,12 @@ def train_one(
     params: Dict, n_resample: int,
     epochs: int, patience: int
 ) -> Tuple[float, Dict[str, torch.Tensor], np.ndarray]:
+    """Train model with early stopping."""
     model = MLP(
         n_resample=n_resample,
         h1=params["h1"], h2=params["h2"],
         drop1=params["drop1"], drop2=params["drop2"],
-        k=len(UV_SPECIES)
+        k=len(UV_SPECIES_EXPANDED)
     ).to(DEVICE)
 
     opt = torch.optim.Adam(model.parameters(), lr=params["lr"], weight_decay=params["wd"])
@@ -139,79 +223,35 @@ def train_one(
             if bad >= patience:
                 break
 
-    # If best_state is None (no improvement), use current model state
     if best_state is None:
         best_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
         best_loss = eval_val()
 
-    # inference on a reference real planet (Jupiter)
-    model.load_state_dict(best_state)
-    model.eval()
-
-    # return logits for jupiter sanity if available
-    if UV_PKLS["JUPITER"].exists():
-        _, wj, fj = load_pkl_spectrum(UV_PKLS["JUPITER"])
-        from synthetic_generator import resample_to_fixed, make_channels
-        wj_fix, fj_fix = resample_to_fixed(wj, fj, n_resample)
-        Xj = make_channels(wj_fix, fj_fix, win=params["baseline_win"])
-        xt = torch.tensor(Xj[None, ...], dtype=torch.float32).to(DEVICE)
-        with torch.no_grad():
-            logits = model(xt)[0].cpu().numpy()
-    else:
-        logits = np.zeros(len(UV_SPECIES), dtype=float)
+    # Dummy logits return for compatibility
+    logits = np.zeros(len(UV_SPECIES_EXPANDED), dtype=float)
 
     return float(best_loss), best_state, logits
 
 
-def build_multi_planet_dataset(win: int, n_per_planet: int, seed0: int):
-    Xs, Ys = [], []
-    for i, (planet, pkl_path) in enumerate(UV_PKLS.items()):
-        if not pkl_path.exists():
-            continue
-        _, w, f = load_pkl_spectrum(pkl_path)
-        priors = DEFAULT_PRIORS_UV.get(planet, {})
-        Xp, Yp = build_synthetic_from_planet(
-            w, f,
-            species=UV_SPECIES,
-            bands=UV_BANDS,
-            priors=priors,
-            n_resample=N_RESAMPLE,
-            n=n_per_planet,
-            win=win,
-            seed=seed0 + i * 100
-        )
-        Xs.append(Xp)
-        Ys.append(Yp)
-
-    X = np.concatenate(Xs, axis=0)
-    Y = np.concatenate(Ys, axis=0)
-
-    rng = np.random.default_rng(seed0 + 999)
-    perm = rng.permutation(len(X))
-    X, Y = X[perm], Y[perm]
-    n_train = int(0.9 * len(X))
-    return X[:n_train], Y[:n_train], X[n_train:], Y[n_train:]
-
-
 def objective(trial: optuna.Trial) -> float:
+    """Optuna objective function."""
     params = {
-        "h1": trial.suggest_categorical("h1", [256, 384, 512, 768]),
-        "h2": trial.suggest_categorical("h2", [128, 192, 256, 384]),
-        "drop1": trial.suggest_float("drop1", 0.10, 0.35),
-        "drop2": trial.suggest_float("drop2", 0.00, 0.25),
-        "lr": trial.suggest_float("lr", 1e-4, 1e-3, log=True),
-        "wd": trial.suggest_float("wd", 1e-6, 3e-4, log=True),
-        "baseline_win": trial.suggest_categorical("baseline_win", [101, 151, 201, 251]),
-        "temp": trial.suggest_float("temp", 1.0, 1.7),
+        "h1": trial.suggest_categorical("h1", [512, 768, 1024]),
+        "h2": trial.suggest_categorical("h2", [256, 384, 512]),
+        "drop1": trial.suggest_float("drop1", 0.10, 0.30),
+        "drop2": trial.suggest_float("drop2", 0.10, 0.30),
+        "lr": trial.suggest_float("lr", 1e-5, 1e-3, log=True),
+        "wd": trial.suggest_float("wd", 1e-6, 1e-4, log=True),
+        "baseline_win": trial.suggest_categorical("baseline_win", [151, 201, 251]),
     }
 
-    X_train, Y_train, X_val, Y_val = build_multi_planet_dataset(
+    X_train, Y_train, X_val, Y_val = build_augmented_dataset(
         win=params["baseline_win"],
-        n_per_planet=N_SYNTH_PER_PLANET_TUNE,
+        n_augment=N_AUGMENT_PER_PLANET,
         seed0=1000 + trial.number
     )
 
-    vloss, _, logits = train_one(
+    vloss, _, _ = train_one(
         X_train, Y_train, X_val, Y_val,
         params=params,
         n_resample=N_RESAMPLE,
@@ -219,93 +259,57 @@ def objective(trial: optuna.Trial) -> float:
         patience=PATIENCE_TUNE
     )
 
-    # tiny sanity penalty: avoid models that predict everything ~0
-    probs = 1.0 / (1.0 + np.exp(-logits / params["temp"]))
-    nonzero = float(np.max(probs))
-    penalty = 0.0
-    if nonzero < 0.25:
-        penalty += (0.25 - nonzero) * 1.0
-
-    trial.set_user_attr("ref_probs", {sp: float(p) for sp, p in zip(UV_SPECIES, probs)})
-    return float(vloss + penalty)
+    return float(vloss)
 
 
 def main():
-    import mlflow
+    """Main training pipeline."""
+    print("="*60)
+    print("  UV Model Training (Real Data + Augmentation)")
+    print("="*60)
+    print(f"DEVICE: {DEVICE}")
 
-    print("DEVICE:", DEVICE)
-    active_planets = [k for k, v in UV_PKLS.items() if v.exists()]
-    print("UV planets:", active_planets)
+    uv_files = detect_uv_files()
+    print(f"UV planets: {list(uv_files.keys())}")
+    print(f"Augmentations per planet: {N_AUGMENT_PER_PLANET}")
+    print(f"Total samples: ~{len(uv_files) * N_AUGMENT_PER_PLANET}")
+    print(f"Species: {len(UV_SPECIES_EXPANDED)} (expanded)")
 
-    # ---- MLflow: one run for the whole training job ----
-    # Optional: set experiment once somewhere at top-level
-    # mlflow.set_experiment("spectral-service")
-
-    with mlflow.start_run(run_name="train-uv-mlp"):
-
-        # ---------- params (static) ----------
+    with mlflow.start_run(run_name="train-uv-mlp-augmented"):
+        # Log params
         try:
             mlflow.log_param("domain", "UV")
             mlflow.log_param("device", DEVICE)
+            mlflow.log_param("n_augment_per_planet", N_AUGMENT_PER_PLANET)
             mlflow.log_param("n_resample", N_RESAMPLE)
             mlflow.log_param("n_trials", N_TRIALS)
-            mlflow.log_param("n_synth_per_planet_final", N_SYNTH_PER_PLANET_FINAL)
-            mlflow.log_param("epochs_final", EPOCHS_FINAL)
-            mlflow.log_param("patience_final", PATIENCE_FINAL)
-            mlflow.log_param("planets_used", ",".join(active_planets))
-            mlflow.log_param("species_count", len(UV_SPECIES))
-            mlflow.log_param("species", ",".join(UV_SPECIES))
+            mlflow.log_param("species_count", len(UV_SPECIES_EXPANDED))
+            mlflow.log_param("planets", ",".join(uv_files.keys()))
         except Exception:
             pass
 
-        # ---------- Optuna tuning span ----------
+        # Optuna tuning
+        print("\n[STEP 1] Hyperparameter tuning...")
         t_opt = time.time()
-        with mlflow.start_span(name="optuna_tuning") as span:
+        with mlflow.start_span(name="optuna_tuning"):
             study = optuna.create_study(direction="minimize")
-            study.optimize(objective, n_trials=N_TRIALS)
-
-            opt_time = time.time() - t_opt
+            study.optimize(objective, n_trials=N_TRIALS, show_progress_bar=True)
             best = study.best_params
 
-            span.set_attribute("best_objective", float(study.best_value))
-            span.set_attribute("optuna_time_sec", float(opt_time))
+        print(f"\nBest params: {best}")
+        print(f"Tuning time: {time.time() - t_opt:.1f}s")
 
-            try:
-                mlflow.log_metric("best_objective", float(study.best_value))
-                mlflow.log_metric("optuna_time_sec", float(opt_time))
-
-                # log best params as MLflow params
-                for k, v in best.items():
-                    mlflow.log_param(f"best_{k}", v)
-
-                # store ref probs if objective saved them
-                ref_probs = study.best_trial.user_attrs.get("ref_probs", {})
-                if ref_probs:
-                    mlflow.log_param(
-                        "ref_probs_top",
-                        ", ".join([f"{k}:{round(float(v),3)}" for k, v in sorted(ref_probs.items(), key=lambda x: -x[1])[:8]])
-                    )
-            except Exception:
-                pass
-
-        print("\nBest params:", best)
-        print("Ref probs:", study.best_trial.user_attrs.get("ref_probs", {}))
-
-        # ---------- Final training span ----------
+        # Final training
+        print("\n[STEP 2] Final training...")
         t0 = time.time()
-        with mlflow.start_span(name="final_training") as span:
-            X_train, Y_train, X_val, Y_val = build_multi_planet_dataset(
+        with mlflow.start_span(name="final_training"):
+            X_train, Y_train, X_val, Y_val = build_augmented_dataset(
                 win=best["baseline_win"],
-                n_per_planet=N_SYNTH_PER_PLANET_FINAL,
+                n_augment=N_AUGMENT_PER_PLANET,
                 seed0=999
             )
 
-            # dataset stats (handy sanity logs)
-            try:
-                mlflow.log_metric("train_samples", int(len(X_train)))
-                mlflow.log_metric("val_samples", int(len(X_val)))
-            except Exception:
-                pass
+            print(f"Train samples: {len(X_train)}, Val samples: {len(X_val)}")
 
             vloss, state, _ = train_one(
                 X_train, Y_train, X_val, Y_val,
@@ -315,41 +319,36 @@ def main():
                 patience=PATIENCE_FINAL
             )
 
-            train_time = time.time() - t0
-            span.set_attribute("final_val_loss", float(vloss))
-            span.set_attribute("train_time_sec", float(train_time))
+        print(f"\nFinal val_loss: {vloss:.4f}")
+        print(f"Training time: {time.time() - t0:.1f}s")
 
-            try:
-                mlflow.log_metric("final_val_loss", float(vloss))
-                mlflow.log_metric("train_time_sec", float(train_time))
-            except Exception:
-                pass
-
-        # ---------- Save artifacts ----------
+        # Save model
+        print("\n[STEP 3] Saving model...")
         uv_pt = MODEL_DIR / "uv_mlp.pt"
         uv_cfg = MODEL_DIR / "uv_config.json"
 
         torch.save({"state_dict": state}, uv_pt)
         uv_cfg.write_text(json.dumps({
             "domain": "UV",
-            "species": UV_SPECIES,
-            "bands": UV_BANDS,
+            "species": UV_SPECIES_EXPANDED,
             "best_params": best,
             "n_resample": N_RESAMPLE,
             "val_loss": float(vloss),
         }, indent=2))
 
-        print("\nSaved:", uv_pt)
-        print("Saved:", uv_cfg)
-        print("Final val_loss:", round(float(vloss), 4), "| time:", round(time.time() - t0, 2), "s")
+        print(f"Saved: {uv_pt}")
+        print(f"Saved: {uv_cfg}")
 
-        # log artifacts into mlflow
         try:
             mlflow.log_artifact(str(uv_pt))
             mlflow.log_artifact(str(uv_cfg))
+            mlflow.log_metric("final_val_loss", float(vloss))
         except Exception:
             pass
 
+    print("\n" + "="*60)
+    print("  Training Complete!")
+    print("="*60)
 
 
 if __name__ == "__main__":
