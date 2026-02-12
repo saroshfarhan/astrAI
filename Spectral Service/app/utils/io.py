@@ -26,17 +26,25 @@ def load_fits_spectrum(path: str) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any
 
     p = Path(path)
     with fits.open(path) as hdul:
-        # This is generic; you may need to adjust per FITS format.
-        # Try common column names first.
+        # Debug: print available HDUs and columns
+        debug_info = []
+        for i, hdu in enumerate(hdul):
+            hdu_type = type(hdu).__name__
+            debug_info.append(f"HDU {i}: {hdu_type}")
+            if hasattr(hdu, "columns") and hdu.columns:
+                cols = [c.name for c in hdu.columns]
+                debug_info.append(f"  Columns: {cols}")
+
+        # Try common column names first
         data = None
         for hdu in hdul:
             if hasattr(hdu, "data") and hdu.data is not None:
                 data = hdu.data
                 break
         if data is None:
-            raise ValueError("No FITS data found.")
+            raise ValueError(f"No FITS data found. HDU structure:\n" + "\n".join(debug_info))
 
-        # Common naming patterns
+        # Extended naming patterns for exoplanet data
         colnames = [c.lower() for c in getattr(data, "columns", []).names] if hasattr(data, "columns") else []
         def pick_col(candidates):
             for c in candidates:
@@ -44,8 +52,9 @@ def load_fits_spectrum(path: str) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any
                     return c
             return None
 
-        w_col = pick_col(["wavelength", "wave", "lambda"])
-        f_col = pick_col(["flux", "intensity", "spec", "signal"])
+        # More comprehensive column name patterns
+        w_col = pick_col(["wavelength", "wave", "lambda", "lam", "wl", "wavel", "freq", "frequency"])
+        f_col = pick_col(["flux", "intensity", "spec", "signal", "counts", "net", "gross", "flux_density"])
 
         if w_col and f_col:
             w = np.asarray(data[w_col], dtype=float)
@@ -56,8 +65,15 @@ def load_fits_spectrum(path: str) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any
             if arr.ndim == 2 and arr.shape[1] >= 2:
                 w = arr[:, 0]
                 flux = arr[:, 1]
+            elif arr.ndim == 1:
+                # Single spectrum case: generate wavelength indices
+                flux = arr
+                w = np.arange(len(flux), dtype=float)
             else:
-                raise ValueError(f"Could not infer wavelength/flux columns. Columns={colnames}")
+                error_msg = f"Could not infer wavelength/flux columns.\n"
+                error_msg += f"Available columns: {colnames}\n"
+                error_msg += "\n".join(debug_info)
+                raise ValueError(error_msg)
 
     m = np.isfinite(w) & np.isfinite(flux)
     w, flux = w[m], flux[m]

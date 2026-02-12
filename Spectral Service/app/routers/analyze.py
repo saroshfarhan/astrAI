@@ -16,8 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from schemas import AnalyzeSpectrumResponse, Prediction
 from utils.io import load_spectrum
-from utils.preprocess import resample_to_fixed, make_channels
+from utils.preprocess import resample_to_fixed, make_channels, crop_to_wavelength_range, IR_WAVELENGTH_RANGE
 from utils.fusion import fuse_uv_ir
+from utils.domain_detector import detect_domain, get_wavelength_unit
 
 router = APIRouter()
 
@@ -72,9 +73,30 @@ def _load_model(domain: str):
 UV_MODEL, UV_CFG = _load_model("uv")
 IR_MODEL, IR_CFG = _load_model("ir")
 
-def _infer(model, cfg, wave: np.ndarray, flux: np.ndarray) -> list[float]:
+def _infer(model, cfg, wave: np.ndarray, flux: np.ndarray, domain: str = "UV") -> list[float]:
+    """Run inference on spectrum data.
+
+    Args:
+        model: Trained PyTorch model
+        cfg: Model configuration dict
+        wave: Wavelength array
+        flux: Flux array
+        domain: "UV" or "IR" - applies wavelength cropping for IR
+
+    Returns:
+        List of probabilities for each species
+    """
     n_resample = int(cfg["n_resample"])
     win = int(cfg["best_params"]["baseline_win"])
+
+    # Apply wavelength cropping for IR data (must match training)
+    if domain == "IR":
+        wave, flux = crop_to_wavelength_range(
+            wave, flux, IR_WAVELENGTH_RANGE[0], IR_WAVELENGTH_RANGE[1]
+        )
+        if len(wave) < 100:  # Insufficient data in range
+            # Return low confidence for all species
+            return [0.01] * len(cfg["species"])
 
     w_fix, f_fix = resample_to_fixed(wave, flux, n_resample)
     X = make_channels(w_fix, f_fix, baseline_win=win)  # (3,N)
@@ -119,17 +141,43 @@ async def analyze_spectrum(file: UploadFile = File(...), top_k: int = 8):
             except Exception:
                 pass
 
-        # ---- infer ----
+        # ---- detect domain (UV vs IR) ----
+        detected_domain = detect_domain(w, f)
+        wavelength_unit = get_wavelength_unit(w)
+
+        try:
+            mlflow.log_param("detected_domain", detected_domain)
+            mlflow.log_param("wavelength_unit", wavelength_unit)
+            mlflow.log_metric("wavelength_min", float(w.min()))
+            mlflow.log_metric("wavelength_max", float(w.max()))
+            mlflow.log_metric("wavelength_median", float(np.median(w)))
+        except Exception:
+            pass
+
+        # ---- infer (only run appropriate model) ----
         uv_probs = None
         ir_probs = None
 
         with mlflow.start_span(name="inference") as sp3:
-            if UV_MODEL is not None and UV_CFG is not None:
-                uv_probs = _infer(UV_MODEL, UV_CFG, w, f)
+            # Run UV model only if detected as UV
+            if detected_domain == "UV" and UV_MODEL is not None and UV_CFG is not None:
+                uv_probs = _infer(UV_MODEL, UV_CFG, w, f, domain="UV")
+                sp3.set_attribute("model_used", "UV")
 
-            if IR_MODEL is not None and IR_CFG is not None:
-                ir_probs = _infer(IR_MODEL, IR_CFG, w, f)
+            # Run IR model only if detected as IR
+            elif detected_domain == "IR" and IR_MODEL is not None and IR_CFG is not None:
+                ir_probs = _infer(IR_MODEL, IR_CFG, w, f, domain="IR")
+                sp3.set_attribute("model_used", "IR")
 
+            # Unknown domain - try both (fallback)
+            elif detected_domain == "UNKNOWN":
+                if UV_MODEL is not None and UV_CFG is not None:
+                    uv_probs = _infer(UV_MODEL, UV_CFG, w, f, domain="UV")
+                if IR_MODEL is not None and IR_CFG is not None:
+                    ir_probs = _infer(IR_MODEL, IR_CFG, w, f, domain="IR")
+                sp3.set_attribute("model_used", "BOTH (unknown domain)")
+
+            sp3.set_attribute("detected_domain", detected_domain)
             sp3.set_attribute("uv_loaded", UV_MODEL is not None)
             sp3.set_attribute("ir_loaded", IR_MODEL is not None)
 

@@ -184,14 +184,21 @@ if uploaded_file:
             st.write(f"**Execution Route:** {' → '.join(active_agents)}")
             st.progress(100)
         
-        # 3. Validation Warnings
+        # 3. Errors (if any)
+        errors = final_state.get("errors", [])
+        if errors:
+            st.error(f"🚨 {len(errors)} Error(s) Occurred")
+            for error in errors:
+                st.write(f"- {error}")
+
+        # 4. Validation Warnings
         flags = final_state.get("validation_flags", [])
         if flags:
             st.warning(f"⚠️ {len(flags)} Validation Checks Triggered")
             for flag in flags:
                 st.write(f"- {flag}")
         
-        # 4. Detailed Data Tabs
+        # 5. Detailed Data Tabs
         tab1, tab2, tab3 = st.tabs(["🧪 Consolidated Predictions", "📚 Knowledge Base", "🔍 Raw Metadata"])
         
         with tab1:
@@ -275,6 +282,7 @@ if uploaded_file:
                         """
                         
                         llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)
+                        #llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-exp", temperature=0.3)
                         response = llm.invoke([
                             SystemMessage(content=system_prompt),
                             HumanMessage(content=prompt)

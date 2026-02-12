@@ -1,4 +1,4 @@
-# spectral_service/training/train_ir.py
+"""Train IR spectral model with real data + physics-based augmentation."""
 from __future__ import annotations
 
 import json, pickle, time, sys
@@ -12,54 +12,300 @@ from torch.utils.data import DataLoader, TensorDataset
 import optuna
 import mlflow
 
-# Add the training directory to sys.path for imports
+# Add training directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from mlflow_utils import setup_mlflow, safe_log_param, safe_log_metric
-from synthetic_generator import (
-    IR_SPECIES, IR_BANDS, DEFAULT_PRIORS_IR,
-    build_synthetic_from_planet,
-)
+from augmentation import create_augmented_dataset
+from expanded_species import IR_SPECIES_EXPANDED, get_labels_for_planet
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_REAL = ROOT / "data" / "real"
 MODEL_DIR = ROOT / "models"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-IR_PKLS = {
-    "SATURN": DATA_REAL / "saturn_ir.pkl",
-    "URANUS": DATA_REAL / "uranus_ir.pkl",
-}
-
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+# ============================================================================
+# CONFIGURATION - ADJUST THESE!
+# ============================================================================
+N_AUGMENT_PER_PLANET = 75  # Number of augmented versions per planet (50-150)
 N_RESAMPLE = 1024
 BATCH = 128
 
-N_TRIALS = 20
-N_SYNTH_PER_PLANET_TUNE = 900
+# Wavelength constraint for IR data (micrometers)
+# Focus on common overlapping region where most planets have coverage
+WAVELENGTH_RANGE = (5.0, 36.0)  # μm - excludes Jupiter (too narrow) and Venus (wrong range)
+MIN_POINTS_IN_RANGE = 100  # Minimum data points required in wavelength range
+
+N_TRIALS = 20  # Optuna trials
 EPOCHS_TUNE = 10
 PATIENCE_TUNE = 3
 
-N_SYNTH_PER_PLANET_FINAL = 2500
-EPOCHS_FINAL = 22
+EPOCHS_FINAL = 25
 PATIENCE_FINAL = 6
 
 
+# ============================================================================
+# DATA LOADING
+# ============================================================================
+
 def load_pkl_spectrum(p: Path) -> Tuple[str, np.ndarray, np.ndarray]:
+    """Load spectrum from pickle file.
+
+    Handles two formats:
+    1. Dictionary format (UV): {'target': ..., 'wavelength': ..., 'flux': ...}
+    2. DataFrame format (IR): DataFrame with columns ['wavelength_um', 'flux_mjy_sr']
+    """
+    import pandas as pd
+
     with open(p, "rb") as f:
         d = pickle.load(f)
-    target = str(d.get("target", p.stem)).upper()
-    # Handle both 'wavelength' and 'wave' keys
-    w = np.asarray(d.get("wavelength", d.get("wave")), dtype=float)
-    y = np.asarray(d["flux"], dtype=float)
+
+    # Check if DataFrame (IR format)
+    if isinstance(d, pd.DataFrame):
+        target = p.stem.replace("_ir", "").upper()
+
+        # Extract wavelength and flux from DataFrame columns
+        # Handle multiple column name variations
+        wave_col = None
+        flux_col = None
+
+        # Find wavelength column
+        for col in ['wavelength_um', 'wavelength', 'wave', 'Wavelength']:
+            if col in d.columns:
+                wave_col = col
+                break
+
+        # Find flux/radiance column
+        for col in ['flux_mjy_sr', 'flux', 'radiance', 'Flux', 'Radiance']:
+            if col in d.columns:
+                flux_col = col
+                break
+
+        if wave_col is None or flux_col is None:
+            raise ValueError(f"Cannot find wavelength/flux columns in: {list(d.columns)}")
+
+        w = np.asarray(d[wave_col].values, dtype=float)
+        y = np.asarray(d[flux_col].values, dtype=float)
+
+    # Dictionary format (UV format)
+    elif isinstance(d, dict):
+        target = str(d.get("target", p.stem)).upper()
+        w = np.asarray(d.get("wavelength", d.get("wave")), dtype=float)
+        y = np.asarray(d["flux"], dtype=float)
+
+    else:
+        raise ValueError(f"Unknown pickle format: {type(d)}")
+
+    # Clean and sort
     m = np.isfinite(w) & np.isfinite(y)
     w, y = w[m], y[m]
     idx = np.argsort(w)
     return target, w[idx], y[idx]
 
 
+def crop_to_wavelength_range(
+    wave: np.ndarray,
+    flux: np.ndarray,
+    wave_min: float,
+    wave_max: float
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Crop spectrum to specified wavelength range.
+
+    Returns cropped wavelength and flux arrays. Returns empty arrays if
+    insufficient coverage in the specified range.
+    """
+    mask = (wave >= wave_min) & (wave <= wave_max)
+    return wave[mask], flux[mask]
+
+
+def detect_ir_files() -> Dict[str, Path]:
+    """Auto-detect IR spectra files and filter by wavelength coverage.
+
+    Only includes planets with sufficient coverage in WAVELENGTH_RANGE.
+    """
+    ir_files = {}
+    skipped = []
+
+    for pkl_file in DATA_REAL.glob("*_ir.pkl"):
+        planet_name = pkl_file.stem.replace("_ir", "").upper()
+
+        # Load and check wavelength coverage
+        try:
+            _, wave, flux = load_pkl_spectrum(pkl_file)
+            wave_crop, flux_crop = crop_to_wavelength_range(
+                wave, flux, WAVELENGTH_RANGE[0], WAVELENGTH_RANGE[1]
+            )
+
+            if len(wave_crop) >= MIN_POINTS_IN_RANGE:
+                ir_files[planet_name] = pkl_file
+            else:
+                skipped.append(f"{planet_name} ({len(wave_crop)} pts in range)")
+        except Exception as e:
+            skipped.append(f"{planet_name} (error: {str(e)})")
+
+    if skipped:
+        print(f"\n  Skipped planets (insufficient coverage in {WAVELENGTH_RANGE[0]}-{WAVELENGTH_RANGE[1]} um):")
+        for s in skipped:
+            print(f"    - {s}")
+
+    return ir_files
+
+
+# ============================================================================
+# PREPROCESSING
+# ============================================================================
+
+def resample_to_fixed(wave: np.ndarray, flux: np.ndarray, n: int) -> Tuple[np.ndarray, np.ndarray]:
+    """Resample spectrum to fixed number of points."""
+    wave_new = np.linspace(wave.min(), wave.max(), n)
+    flux_new = np.interp(wave_new, wave, flux)
+    return wave_new.astype(np.float32), flux_new.astype(np.float32)
+
+
+def compute_baseline(flux: np.ndarray, win: int = 151) -> np.ndarray:
+    """Compute baseline using Savitzky-Golay filter."""
+    from scipy.signal import savgol_filter
+    n = len(flux)
+    win = max(11, min(win, n - 1))
+    if win % 2 == 0:
+        win += 1
+    baseline = savgol_filter(flux.astype(float), window_length=win, polyorder=3)
+    baseline = np.clip(baseline, np.percentile(baseline, 1), np.percentile(baseline, 99))
+    return (baseline + 1e-12).astype(np.float32)
+
+
+def make_channels(wave: np.ndarray, flux: np.ndarray, baseline_win: int = 151) -> np.ndarray:
+    """Create 3-channel representation: [normalized, 1st derivative, 2nd derivative].
+
+    Uses robust normalization to handle diverse flux scales across different planets.
+    """
+    # Robust baseline normalization
+    baseline = compute_baseline(flux, win=baseline_win)
+    r = (flux / baseline) - 1.0
+
+    # Robust z-score normalization using median absolute deviation
+    median = np.median(r)
+    mad = np.median(np.abs(r - median))
+    r = (r - median) / (mad * 1.4826 + 1e-8)  # 1.4826 makes MAD consistent with std for normal dist
+
+    # Clip outliers for stability
+    r = np.clip(r, -5, 5)
+
+    # Derivatives (already scale-invariant due to normalization)
+    d1 = np.gradient(r, wave)
+    d2 = np.gradient(d1, wave)
+
+    # Normalize derivatives independently for stability
+    d1 = (d1 - np.median(d1)) / (np.std(d1) + 1e-8)
+    d2 = (d2 - np.median(d2)) / (np.std(d2) + 1e-8)
+
+    return np.stack([r, d1, d2], axis=0).astype(np.float32)
+
+
+# ============================================================================
+# DATASET PREPARATION
+# ============================================================================
+
+def build_augmented_dataset(win: int, n_augment: int, seed0: int):
+    """Build training dataset with augmentation.
+
+    IMPORTANT: Splits by planet, not by sample, to prevent data leakage.
+    All augmentations of a planet stay together in either train or val.
+    """
+    ir_files = detect_ir_files()
+
+    # Build dataset planet-by-planet
+    planet_datasets = []
+
+    for planet_idx, (planet_name, pkl_path) in enumerate(ir_files.items()):
+        # Load real spectrum
+        _, wave_real, flux_real = load_pkl_spectrum(pkl_path)
+
+        # Crop to wavelength range (focus on overlapping region)
+        wave_real, flux_real = crop_to_wavelength_range(
+            wave_real, flux_real, WAVELENGTH_RANGE[0], WAVELENGTH_RANGE[1]
+        )
+
+        if len(wave_real) < MIN_POINTS_IN_RANGE:
+            print(f"  WARNING: {planet_name} has only {len(wave_real)} points in range, skipping...")
+            continue
+
+        # Get labels
+        labels = get_labels_for_planet(planet_name, IR_SPECIES_EXPANDED, domain="IR")
+
+        # Create augmented versions
+        waves_aug, fluxes_aug = create_augmented_dataset(
+            wave_real, flux_real,
+            n_augmentations=n_augment,
+            seed_offset=seed0 + planet_idx
+        )
+
+        # Preprocess each
+        X_planet, Y_planet = [], []
+        for wave_aug, flux_aug in zip(waves_aug, fluxes_aug):
+            wave_fix, flux_fix = resample_to_fixed(wave_aug, flux_aug, N_RESAMPLE)
+            X = make_channels(wave_fix, flux_fix, win)
+            X_planet.append(X)
+            Y_planet.append(labels)
+
+        planet_datasets.append({
+            'name': planet_name,
+            'X': np.array(X_planet, dtype=np.float32),
+            'Y': np.array(Y_planet, dtype=np.float32)
+        })
+
+    rng = np.random.default_rng(seed0 + 999)
+
+    # If we have <=3 planets, use sample-level split (data leakage acceptable for now)
+    # Otherwise use planet-level split
+    if len(planet_datasets) <= 3:
+        print(f"  WARNING: Only {len(planet_datasets)} IR planets detected.")
+        print(f"  Using sample-level split (data leakage) until more planets are added.")
+        print(f"  Recommendation: Add 4+ IR planets for proper planet-level validation.")
+
+        # Combine all planets
+        X_all = np.concatenate([p['X'] for p in planet_datasets], axis=0)
+        Y_all = np.concatenate([p['Y'] for p in planet_datasets], axis=0)
+
+        # Random shuffle and split
+        perm = rng.permutation(len(X_all))
+        X_all, Y_all = X_all[perm], Y_all[perm]
+        n_train = int(0.85 * len(X_all))
+
+        return X_all[:n_train], Y_all[:n_train], X_all[n_train:], Y_all[n_train:]
+
+    else:
+        # Planet-level train/val split (80/20 by planet count)
+        rng.shuffle(planet_datasets)
+        n_val_planets = max(1, len(planet_datasets) // 5)
+
+        train_planets = planet_datasets[n_val_planets:]
+        val_planets = planet_datasets[:n_val_planets]
+
+        print(f"  Train planets: {[p['name'] for p in train_planets]}")
+        print(f"  Val planets: {[p['name'] for p in val_planets]}")
+
+        # Combine within each split
+        X_train = np.concatenate([p['X'] for p in train_planets], axis=0)
+        Y_train = np.concatenate([p['Y'] for p in train_planets], axis=0)
+        X_val = np.concatenate([p['X'] for p in val_planets], axis=0)
+        Y_val = np.concatenate([p['Y'] for p in val_planets], axis=0)
+
+        # Shuffle within each split
+        train_perm = rng.permutation(len(X_train))
+        val_perm = rng.permutation(len(X_val))
+
+        return X_train[train_perm], Y_train[train_perm], X_val[val_perm], Y_val[val_perm]
+
+
+# ============================================================================
+# MODEL
+# ============================================================================
+
 class MLP(nn.Module):
+    """Multi-layer perceptron for spectral classification."""
     def __init__(self, n_resample: int, h1: int, h2: int, drop1: float, drop2: float, k: int):
         super().__init__()
         self.net = nn.Sequential(
@@ -82,11 +328,12 @@ def train_one(
     params: Dict, n_resample: int,
     epochs: int, patience: int
 ) -> Tuple[float, Dict[str, torch.Tensor], np.ndarray]:
+    """Train model with early stopping."""
     model = MLP(
         n_resample=n_resample,
         h1=params["h1"], h2=params["h2"],
         drop1=params["drop1"], drop2=params["drop2"],
-        k=len(IR_SPECIES)
+        k=len(IR_SPECIES_EXPANDED)
     ).to(DEVICE)
 
     opt = torch.optim.Adam(model.parameters(), lr=params["lr"], weight_decay=params["wd"])
@@ -134,78 +381,35 @@ def train_one(
             if bad >= patience:
                 break
 
-    # If best_state is None (no improvement), use current model state
     if best_state is None:
         best_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
         best_loss = eval_val()
 
-    model.load_state_dict(best_state)
-    model.eval()
-
-    # reference logits on Saturn if available
-    if IR_PKLS["SATURN"].exists():
-        _, ws, fs = load_pkl_spectrum(IR_PKLS["SATURN"])
-        from synthetic_generator import resample_to_fixed, make_channels
-        ws_fix, fs_fix = resample_to_fixed(ws, fs, n_resample)
-        Xs = make_channels(ws_fix, fs_fix, win=params["baseline_win"])
-        xt = torch.tensor(Xs[None, ...], dtype=torch.float32).to(DEVICE)
-        with torch.no_grad():
-            logits = model(xt)[0].cpu().numpy()
-    else:
-        logits = np.zeros(len(IR_SPECIES), dtype=float)
+    # Dummy logits return for compatibility
+    logits = np.zeros(len(IR_SPECIES_EXPANDED), dtype=float)
 
     return float(best_loss), best_state, logits
 
 
-def build_multi_planet_dataset(win: int, n_per_planet: int, seed0: int):
-    Xs, Ys = [], []
-    for i, (planet, pkl_path) in enumerate(IR_PKLS.items()):
-        if not pkl_path.exists():
-            continue
-        _, w, f = load_pkl_spectrum(pkl_path)
-        priors = DEFAULT_PRIORS_IR.get(planet, {})
-        Xp, Yp = build_synthetic_from_planet(
-            w, f,
-            species=IR_SPECIES,
-            bands=IR_BANDS,
-            priors=priors,
-            n_resample=N_RESAMPLE,
-            n=n_per_planet,
-            win=win,
-            seed=seed0 + i * 100
-        )
-        Xs.append(Xp)
-        Ys.append(Yp)
-
-    X = np.concatenate(Xs, axis=0)
-    Y = np.concatenate(Ys, axis=0)
-
-    rng = np.random.default_rng(seed0 + 999)
-    perm = rng.permutation(len(X))
-    X, Y = X[perm], Y[perm]
-    n_train = int(0.9 * len(X))
-    return X[:n_train], Y[:n_train], X[n_train:], Y[n_train:]
-
-
 def objective(trial: optuna.Trial) -> float:
+    """Optuna objective function."""
     params = {
-        "h1": trial.suggest_categorical("h1", [256, 384, 512, 768]),
-        "h2": trial.suggest_categorical("h2", [128, 192, 256, 384]),
-        "drop1": trial.suggest_float("drop1", 0.10, 0.35),
-        "drop2": trial.suggest_float("drop2", 0.00, 0.25),
-        "lr": trial.suggest_float("lr", 1e-4, 1e-3, log=True),
-        "wd": trial.suggest_float("wd", 1e-6, 3e-4, log=True),
-        "baseline_win": trial.suggest_categorical("baseline_win", [101, 151, 201, 251]),
-        "temp": trial.suggest_float("temp", 1.0, 1.7),
+        "h1": trial.suggest_categorical("h1", [512, 768, 1024]),
+        "h2": trial.suggest_categorical("h2", [256, 384, 512]),
+        "drop1": trial.suggest_float("drop1", 0.10, 0.30),
+        "drop2": trial.suggest_float("drop2", 0.10, 0.30),
+        "lr": trial.suggest_float("lr", 1e-5, 1e-3, log=True),
+        "wd": trial.suggest_float("wd", 1e-6, 1e-4, log=True),
+        "baseline_win": trial.suggest_categorical("baseline_win", [151, 201, 251]),
     }
 
-    X_train, Y_train, X_val, Y_val = build_multi_planet_dataset(
+    X_train, Y_train, X_val, Y_val = build_augmented_dataset(
         win=params["baseline_win"],
-        n_per_planet=N_SYNTH_PER_PLANET_TUNE,
+        n_augment=N_AUGMENT_PER_PLANET,
         seed0=2000 + trial.number
     )
 
-    vloss, _, logits = train_one(
+    vloss, _, _ = train_one(
         X_train, Y_train, X_val, Y_val,
         params=params,
         n_resample=N_RESAMPLE,
@@ -213,88 +417,59 @@ def objective(trial: optuna.Trial) -> float:
         patience=PATIENCE_TUNE
     )
 
-    probs = 1.0 / (1.0 + np.exp(-logits / params["temp"]))
-    nonzero = float(np.max(probs))
-    penalty = 0.0
-    if nonzero < 0.20:
-        penalty += (0.20 - nonzero) * 1.0
-
-    trial.set_user_attr("ref_probs", {sp: float(p) for sp, p in zip(IR_SPECIES, probs)})
-    return float(vloss + penalty)
+    return float(vloss)
 
 
 def main():
-    import mlflow
+    """Main training pipeline."""
+    print("="*60)
+    print("  IR Model Training (Real Data + Augmentation)")
+    print("="*60)
+    print(f"DEVICE: {DEVICE}")
+    print(f"Wavelength Range: {WAVELENGTH_RANGE[0]}-{WAVELENGTH_RANGE[1]} um (overlapping region)")
+    print(f"Min points required: {MIN_POINTS_IN_RANGE}")
 
-    print("DEVICE:", DEVICE)
-    active_planets = [k for k, v in IR_PKLS.items() if v.exists()]
-    print("IR planets:", active_planets)
+    ir_files = detect_ir_files()
+    print(f"\nIR planets (after filtering): {list(ir_files.keys())}")
+    print(f"Augmentations per planet: {N_AUGMENT_PER_PLANET}")
+    print(f"Total samples: ~{len(ir_files) * N_AUGMENT_PER_PLANET}")
+    print(f"Species: {len(IR_SPECIES_EXPANDED)} (expanded)")
 
-    # Optional: set once globally in the file
-    # mlflow.set_experiment("spectral-service")
-
-    with mlflow.start_run(run_name="train-ir-mlp"):
-
-        # ---------- params (static) ----------
+    with mlflow.start_run(run_name="train-ir-mlp-augmented"):
+        # Log params
         try:
             mlflow.log_param("domain", "IR")
             mlflow.log_param("device", DEVICE)
+            mlflow.log_param("n_augment_per_planet", N_AUGMENT_PER_PLANET)
             mlflow.log_param("n_resample", N_RESAMPLE)
             mlflow.log_param("n_trials", N_TRIALS)
-            mlflow.log_param("n_synth_per_planet_final", N_SYNTH_PER_PLANET_FINAL)
-            mlflow.log_param("epochs_final", EPOCHS_FINAL)
-            mlflow.log_param("patience_final", PATIENCE_FINAL)
-            mlflow.log_param("planets_used", ",".join(active_planets))
-            mlflow.log_param("species_count", len(IR_SPECIES))
-            mlflow.log_param("species", ",".join(IR_SPECIES))
+            mlflow.log_param("species_count", len(IR_SPECIES_EXPANDED))
+            mlflow.log_param("planets", ",".join(ir_files.keys()))
         except Exception:
             pass
 
-        # ---------- Optuna tuning span ----------
+        # Optuna tuning
+        print("\n[STEP 1] Hyperparameter tuning...")
         t_opt = time.time()
-        with mlflow.start_span(name="optuna_tuning") as span:
+        with mlflow.start_span(name="optuna_tuning"):
             study = optuna.create_study(direction="minimize")
-            study.optimize(objective, n_trials=N_TRIALS)
-
-            opt_time = time.time() - t_opt
+            study.optimize(objective, n_trials=N_TRIALS, show_progress_bar=True)
             best = study.best_params
 
-            span.set_attribute("best_objective", float(study.best_value))
-            span.set_attribute("optuna_time_sec", float(opt_time))
+        print(f"\nBest params: {best}")
+        print(f"Tuning time: {time.time() - t_opt:.1f}s")
 
-            try:
-                mlflow.log_metric("best_objective", float(study.best_value))
-                mlflow.log_metric("optuna_time_sec", float(opt_time))
-
-                for k, v in best.items():
-                    mlflow.log_param(f"best_{k}", v)
-
-                ref_probs = study.best_trial.user_attrs.get("ref_probs", {})
-                if ref_probs:
-                    mlflow.log_param(
-                        "ref_probs_top",
-                        ", ".join([f"{k}:{round(float(v),3)}" for k, v in sorted(ref_probs.items(), key=lambda x: -x[1])[:8]])
-                    )
-            except Exception:
-                pass
-
-        print("\nBest params:", best)
-        print("Ref probs:", study.best_trial.user_attrs.get("ref_probs", {}))
-
-        # ---------- Final training span ----------
+        # Final training
+        print("\n[STEP 2] Final training...")
         t0 = time.time()
-        with mlflow.start_span(name="final_training") as span:
-            X_train, Y_train, X_val, Y_val = build_multi_planet_dataset(
+        with mlflow.start_span(name="final_training"):
+            X_train, Y_train, X_val, Y_val = build_augmented_dataset(
                 win=best["baseline_win"],
-                n_per_planet=N_SYNTH_PER_PLANET_FINAL,
+                n_augment=N_AUGMENT_PER_PLANET,
                 seed0=2999
             )
 
-            try:
-                mlflow.log_metric("train_samples", int(len(X_train)))
-                mlflow.log_metric("val_samples", int(len(X_val)))
-            except Exception:
-                pass
+            print(f"Train samples: {len(X_train)}, Val samples: {len(X_val)}")
 
             vloss, state, _ = train_one(
                 X_train, Y_train, X_val, Y_val,
@@ -304,39 +479,37 @@ def main():
                 patience=PATIENCE_FINAL
             )
 
-            train_time = time.time() - t0
-            span.set_attribute("final_val_loss", float(vloss))
-            span.set_attribute("train_time_sec", float(train_time))
+        print(f"\nFinal val_loss: {vloss:.4f}")
+        print(f"Training time: {time.time() - t0:.1f}s")
 
-            try:
-                mlflow.log_metric("final_val_loss", float(vloss))
-                mlflow.log_metric("train_time_sec", float(train_time))
-            except Exception:
-                pass
-
-        # ---------- Save artifacts ----------
+        # Save model
+        print("\n[STEP 3] Saving model...")
         ir_pt = MODEL_DIR / "ir_mlp.pt"
         ir_cfg = MODEL_DIR / "ir_config.json"
 
         torch.save({"state_dict": state}, ir_pt)
         ir_cfg.write_text(json.dumps({
             "domain": "IR",
-            "species": IR_SPECIES,
-            "bands": IR_BANDS,
+            "species": IR_SPECIES_EXPANDED,
             "best_params": best,
             "n_resample": N_RESAMPLE,
             "val_loss": float(vloss),
         }, indent=2))
 
-        print("\nSaved:", ir_pt)
-        print("Saved:", ir_cfg)
-        print("Final val_loss:", round(float(vloss), 4), "| time:", round(time.time() - t0, 2), "s")
+        print(f"Saved: {ir_pt}")
+        print(f"Saved: {ir_cfg}")
 
         try:
             mlflow.log_artifact(str(ir_pt))
             mlflow.log_artifact(str(ir_cfg))
+            mlflow.log_metric("final_val_loss", float(vloss))
         except Exception:
             pass
+
+    print("\n" + "="*60)
+    print("  Training Complete!")
+    print("="*60)
+
 
 if __name__ == "__main__":
     main()
