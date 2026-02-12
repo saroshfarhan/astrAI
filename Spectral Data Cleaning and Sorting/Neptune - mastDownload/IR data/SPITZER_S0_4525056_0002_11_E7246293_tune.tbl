@@ -1,0 +1,441 @@
+\wavsamp version for S15.0, 2006 Oct 02
+\processing time 14:04:24 PST 10/02/2006
+\character channelID = 0
+\char HISTORY ========== Parameters supplied to RIDGE program below ==========
+\char HISTORY PROCESS 2010/09/25 00:16:46
+\char HISTORY ridge v1.15  (nl_and_params v1.9)
+\char HISTORY WAVSAMP_FILE = ./cal/wavsamp.tbl
+\char HISTORY PROFILE_FILE = profile.tbl
+\char HISTORY PSF_FOV_FILE = ./cal/psf_fov.tbl
+\char HISTORY PCT_RANGE = 25.0, percent
+\char HISTORY NUM_SIGMA = 3.0,
+\char HISTORY MEDIAN_PTS = 5.0,
+\char HISTORY NAMELIST_FILE = ./cdf/ridge.nl
+\char HISTORY ========== RIDGE processing results summary below ==========
+\char HISTORY FIND PEAKS: YES
+\char HISTORY OVERALL BEST Max DN=1838.4 at PCT=36.15, found in region 0
+\char HISTORY MED_FILT_SIZE = 5
+\char HISTORY PERCENTAGE = 36.15  (cut was performed here)
+\char HISTORY MAX_SIGNAL = 1838.4  (maximum signal value in DN)
+\char HISTORY CUT_POS = 36.15  (pct at which the max signal was found)
+\char HISTORY MAX_SIGNAL_IN_REGION = 0  (region where max signal was found)
+\char HISTORY DET_THRESH = -3.24386  (number of sigma over threshold)
+\char HISTORY DET_SIGMA = 485.127  (sigma value used to find threshold)
+\COMMENT ========== Keywords from PROFILE table file below ==========
+\char NAXIS   =                    2 / STANDARD FITS FORMAT
+\char NAXIS1  =                  128
+\char NAXIS2  =                  128
+\char ORIGIN  = 'Spitzer Science Center' / Organization generating this FITS file
+\char CREATOR = 'S18.18.0'           / SW version used to create this FITS file
+\char TELESCOP= 'Spitzer '
+\char INSTRUME= 'IRSX    '
+\char CAL_SET = 'C18.18PRE25.A'      / ID for the set of CAL files used
+\char CHNLNUM =                    0 / 0=SL, 1=SH, 2=LL, 3=LH
+\char FILENAME= 'IRSX.0.0004525056.0002.0000.01.mipl.fits' / File name
+\char FILETYPE= 'fits-irs2d-flux'
+\char EXPTYPE = 'sp      '           / Exposure Type
+\char REQTYPE = 'AOR     '           / Request type (AOR,IER, or SER)
+\char AOT_TYPE= 'IrsStare'           / Observation Template Type
+\char AORLABEL= 'IRSS-n-jvc-ssm899X1' / AOR Label
+\char FOVNAME = 'IRS_Short-Lo_2nd_Order_1st_Position' / Field of View Name
+\char READMODE= 'RAW     '           / Readout Mode
+\char 
+\char           / PROPOSAL INFORMATION
+\char 
+\char OBSRVR  = 'James R. Houck'     / Observer Name
+\char OBSRVRID=                    4 / Observer ID of Principal Investigator
+\char PROCYCL =                    1 / Proposal Cycle
+\char PROGID  =                   71 / Program ID
+\char PROTITLE= 'Observations of Outer Solar System Satellites and Planets' / Program
+\char PROGCAT =                   29 / Program Category
+\char 
+\char           / TIME AND EXPOSURE INFORMATION
+\char 
+\char DATE_OBS= '2004-05-15T01:00:46.739' / Date & time (UTC) at DCE start
+\char MJD_OBS =      53140.042444275 / Program calkeywords trimmed-average result
+\char UTCS_OBS=       137854867.1875 / Program calkeywords trimmed-average result
+\char SCLK_OBS=      769050151.26675 / Program calkeywords trimmed-average result
+\char SAMPTIME=               1.0486 / [sec] Sample integration time
+\char REQMODE =                    5 / ID for mode or type of request
+\char EXPSTRTC=            769050123 / Exposure Start Timestamp Coarse
+\char EXPSTRTF=                30198 / Exposure Start Timestamp Fine
+\char GRPARVTC=            769050134 / [sec] Coarse Spacecraft Group Time
+\char GRPARVTF=                    0 / [sec] Fine Spacecraft Group Time
+\char AIRSCMDN=                    4 / Commanded number of DCEs for IRS
+\char AIRS_DET=                    0 / Selected IRS detector for exposure command
+\char AIRSEXPM=                    1 / Current Mode of the IRS Exp Manager
+\char GRPTIME =               2.0972 / [sec] Group (w/ spin) integration time
+\char DEADTIME=               6.2916 / [sec] Reset + boost(s) time
+\char RAMPTIME=                 6.29 / [sec] Ramp (total DCE) integration time
+\char EXPTOT_T=                25.17 / [sec] Integr. time for all DCEs in exposure
+\char AIRSERCT=                    0 / Number of IRS exposure errors
+\char 
+\char           / TARGET AND POINTING INFORMATION
+\char 
+\char OBJECT  = 'Neptune - Longitude 1' / Target Name
+\char OBJTYPE = 'TargetMovingSingle' / Target Type
+\char CRVAL1  =     317.752901696779 / [deg] RA at CRPIX1,CRPIX2 averaged over DCE
+\char CRVAL2  =    -16.1627535148132 / [deg] DEC at CRPIX1,CRPIX2 averaged over DCE
+\char RA_HMS  = '21h11m00.7s'        / [hh:mm:ss.s] RA_SLT or CRVAL1 in sexagesimal
+\char DEC_DMS = '-16d09m46s'         / [dd:mm:ss] DEC_SLT or CRVAL2 in sexagesimal
+\char RADESYS = 'ICRS    '           / International Celestial Reference System
+\char EQUINOX =                2000. / Equinox for ICRF celestial coord. system
+\char CTYPE1  = 'RA---TAN-SIP'       / RA---TAN with distortion in pixel space
+\char CTYPE2  = 'DEC--TAN-SIP'       / DEC--TAN with distortion in pixel space
+\char CRPIX1  =                107.5
+\char CRPIX2  =                  31.
+\char PA      =     70.4350947006587 / [deg] Position angle of axis 2 (E of N,+=CCW)
+\char RA_RQST =     317.810960876899 / [deg] Commanded RA referenced to commanded FOV
+\char DEC_RQST=    -16.2473041890108 / [deg] Commanded Dec referenced to commanded FOV
+\char PA_RQST =     71.6465748549897 / [deg] Requested pos. angle of axis 2 (E of N)
+\char CRDER1  = 0.000302043541440511 / Program calkeywords trimmed-average result
+\char CRDER2  = 0.000302251364505901 / Program calkeywords trimmed-average result
+\char SIGRA   =    0.073624674946833 / [arcsec] RMS dispersion of RA over DCE
+\char SIGDEC  =    0.107794089423401 / [arcsec] RMS dispersion of DEC over DCE
+\char SIGPA   =   0.0286342166928357 / [arcsec] RMS dispersion of PA over DCE
+\char PTGDIFF =     1.46129175693348 / [arcsec] offset btwn actual and rqsted pntng
+\char PTGDIFFX=    0.891828842525315 / [arcsec] requested - actual pntg along axis 1
+\char PTGDIFFY=     1.15759005573567 / [arcsec] requested - actual pntg along axis 2
+\char RA_REF  =     317.810960876899 / [deg] Commanded RA (J2000) of ref. position
+\char DEC_REF =    -16.2473041890108 / [deg] Commanded Dec (J2000) of ref. position
+\char CD1_1   = 0.000179451162530388 / [deg/pix] CD matrix element 1_1
+\char CD1_2   = 0.000476065033417088 / [deg/pix] CD matrix element 1_2
+\char CD2_1   = -0.000480141693479736 / [deg/pix] CD matrix element 2_1
+\char CD2_2   = 0.000169190652485701 / [deg/pix] CD matrix element 2_2
+\char USEDBPHF=                    T / T if Boresight Pointing History File was used.
+\char RMS_JIT =  0.00487767086022332 / Program calkeywords trimmed-average result
+\char RMS_JITY=  0.00293196331563908 / Program calkeywords trimmed-average result
+\char RMS_JITZ=  0.00386088873127048 / Program calkeywords trimmed-average result
+\char RA_FOV  =      317.81116569503 / [deg] RA at FOVID averaged over DCE
+\char DEC_FOV =    -16.2469490837143 / [deg] DEC at FOVID averaged over DCE
+\char PA_FOV  =     156.586711261682 / [deg] PA at FOVID averaged over DCE
+\char RA_SLT  =     317.812228694998 / [deg] RA at slit center averaged over DCE
+\char DEC_SLT =     -16.249305512215 / [deg] DEC at slit center averaged over DCE
+\char PA_SLT  =     156.586426261691 / [deg] PA at slit center averaged over DCE
+\char RA_XSLT =     317.803218338126 / [deg] RA at center of non-targeted slit
+\char DEC_XSLT=    -16.2293305128146 / [deg] DEC at center of non-targeted slit
+\char PA_XSLT =     156.588866261618 / [deg] PA at center of non-targeted slit
+\char RA_BPU  =     317.752901696779 / [deg] RA at center of blue peakup image
+\char DEC_BPU =    -16.1627535148132 / [deg] DEC at center of blue peakup image
+\char RA_RPU  =     317.783492695861 / [deg] RA at center of red peakup image
+\char DEC_RPU =    -16.1514555151523 / [deg] DEC at center of red peakup image
+\char CSDRADEC= 4.93774784500628E-06 / [deg] Costandard deviation in RA and Dec
+\char CSD_JTYZ= 0.000470387248863368 / [arcsec] Costandard deviation of jitter in YZ
+\char BPHFNAME= 'BPHF.0769046400.02.pntg' / Boresight Pointing History Filename
+\char FOVVERSN= 'BodyFrames_FTU_13Aa.xls' / FOV/BodyFrames file version used
+\char PXSCAL1 =     1.84480554889888 / [arcsec/pix] Scale for axis1 at CRPIX1,CRPIX2
+\char PXSCAL2 =     1.81884951889515 / [arcsec/pix] Scale for axis2 at CRPIX1,CRPIX2
+\char VHELCORR=                 29.6 / [km/sec] Correction to heliocentric velocity
+\char VLSRCORR=                 38.1 / [km/sec] Correction to local standard of rest
+\char SPTZR_X =     -96416850.758837 / [km] Heliocentric x position
+\char SPTZR_Y =     -105089847.48258 / [km] Heliocentric y position
+\char SPTZR_Z =     -48807946.144961 / [km] Heliocentric z position
+\char SPTZR_VX=            22.581727 / [km/sec] Heliocentric x velocity
+\char SPTZR_VY=           -17.712115 / [km/sec] Heliocentric y velocity
+\char SPTZR_VZ=            -7.650196 / [km/sec] Heliocentric z velocity
+\char ET_OBS  =        137854910.925 / [sec] DCE start time (TDB seconds past J2000)
+\char HMJD_OBS=        53140.0427029 / Corresponding Heliocen. Mod. Julian Date
+\char 
+\char 
+\char           / MOVING TARGET INFORMATION
+\char 
+\char NAIFID  =                  899 / NAIF ID number for target
+\char NAIFNAME= 'Neptune '           / Solar System Object name
+\char EPHMFILE= 'de.20030625T1041.bsp' / Ephemeris file used for moving target
+\char 
+\char           / DISTORTION KEYWORDS (IMAGING MODE)
+\char 
+\char A_ORDER =                    3 / polynomial order, axis 1, detector to sky
+\char A_0_2   =           -1.468E-05 / distortion coefficient
+\char A_0_3   =            -8.09E-08 / distortion coefficient
+\char A_1_1   =           -3.832E-05 / distortion coefficient
+\char A_1_2   =            4.697E-07 / distortion coefficient
+\char A_2_0   =           -0.0003967 / distortion coefficient
+\char A_2_1   =            3.245E-06 / distortion coefficient
+\char A_3_0   =            -1.12E-06 / distortion coefficient
+\char A_DMAX  =                 0.18 / [pixel] maximum correction
+\char 
+\char B_ORDER =                    3 / polynomial order, axis 2, detector to sky
+\char B_0_2   =           -9.845E-05 / distortion coefficient
+\char B_0_3   =            8.308E-07 / distortion coefficient
+\char B_1_1   =             -3.0E-05 / distortion coefficient
+\char B_1_2   =            7.623E-07 / distortion coefficient
+\char B_2_0   =            0.0003357 / distortion coefficient
+\char B_2_1   =            2.401E-06 / distortion coefficient
+\char B_3_0   =            4.401E-07 / distortion coefficient
+\char B_DMAX  =                0.208 / [pixel] maximum correction
+\char 
+\char AP_ORDER=                    3 / polynomial order, axis 1, sky to detector
+\char AP_0_1  =           -0.0006382 / distortion coefficient
+\char AP_0_2  =             1.49E-05 / distortion coefficient
+\char AP_0_3  =            7.967E-08 / distortion coefficient
+\char AP_1_0  =            0.0002848 / distortion coefficient
+\char AP_1_1  =             3.72E-05 / distortion coefficient
+\char AP_1_2  =            -4.59E-07 / distortion coefficient
+\char AP_2_0  =            0.0003965 / distortion coefficient
+\char AP_2_1  =           -3.241E-06 / distortion coefficient
+\char AP_3_0  =              1.2E-06 / distortion coefficient
+\char 
+\char BP_ORDER=                    3 / polynomial order, axis 2, sky to detector
+\char BP_0_1  =            0.0007219 / distortion coefficient
+\char BP_0_2  =            9.871E-05 / distortion coefficient
+\char BP_0_3  =           -8.353E-07 / distortion coefficient
+\char BP_1_0  =           -0.0005852 / distortion coefficient
+\char BP_1_1  =            3.046E-05 / distortion coefficient
+\char BP_1_2  =           -7.834E-07 / distortion coefficient
+\char BP_2_0  =           -0.0003359 / distortion coefficient
+\char BP_2_1  =           -2.463E-06 / distortion coefficient
+\char BP_3_0  =           -5.273E-07 / distortion coefficient
+\char 
+\char           / PHOTOMETRY (IRS IMAGING)
+\char 
+\char BUNIT   = 'e-/sec  '           / Units of image data
+\char 
+\char           / SPECTROPHOTOMETRY IRS SL, LL (CHNLNUM 0, 2)
+\char 
+\char FLXCON01=           7840.70752 / [electrons/sec/Jy] Flux conversion Order 1
+\char FLXERR01=                124.5 / Flux conversion uncertainties Order 1
+\char FLXCON02=          4094.035889 / [electrons/sec/Jy] Flux conversion Order 2
+\char FLXERR02=                124.5 / Flux conversion uncertainties Order 2
+\char FLXCON03=          4186.520996 / [electrons/sec/Jy] Flux conversion Bonus Order
+\char FLXERR03=                124.5 / Flux conversion uncertainties Order 3
+\char 
+\char           / GENERAL MAPPING KEYWORDS
+\char 
+\char DBEXPOID=              1348992 / Current Exposure ID
+\char 
+\char           / IRS PEAKUP KEYWORDS
+\char 
+\char PKUPMODE= 'IRS     '           / Peakup mode (none, IRS, or PCRS)
+\char PKUPACCU= 'Moderate'           / Peakup Accuracy (high, moderate,low)
+\char PKUPFILT= 'BLUE    '           / Peakup filter (blue or red)
+\char PKUPFLUX=                 450. / Flux density of peakup target for IRS [mJy] or
+\char PKUPXTND=                    F / Extended source (T/F)
+\char ISPUPOS =                    F / PU target given in absolute positions (T) or re
+\char HP_CENQ =                    0 / Peakup centroid quality code
+\char APKUPCEN=                    1 / Status of the peakup centroid
+\char AXCNTRD1=                10809 / [centipixels] X value of the brightest centroid
+\char AYCNTRD1=                 2787 / [centipixels] Y value of the brightest centroid
+\char AXCNTRD2=                    0 / [centipixels] X value of the second brightest c
+\char AYCNTRD2=                    0 / [centipixels] Y value of the second brightest c
+\char AINTENS1=              6259065 / [counts] Intensity value of the brightest centr
+\char AINTENS2=                    0 / [counts] Intensity value of the second brightes
+\char APKUPXCE=                10809 / [centipixels] X value of the centroid to be ret
+\char APKUPYCE=                 2787 / [centipixels] Y value of the centroid to be ret
+\char 
+\char 
+\char           / DATA FLOW KEYWORDS
+\char 
+\char DATE    = '2010-09-25T07:11:44' / file creation date (YYYY-MM-DDThh:mm:ss UT)
+\char AORKEY  = '4525056 '           / AOR or EIR key. Astrnmy Obs Req/Instr Eng Req
+\char EXPID   =                    2 / Exposure ID (0-9999)
+\char DCENUM  =                    0 / DCE number (0-9999)
+\char TLMGRPS =                    4 / Number of expected telemetry groups
+\char FILE_VER=                    1 / Version of the raw file made by SIS
+\char RAWNAME = 'IRSX.0.0004525056.0002.0000.01.mipl.fits' / Raw data file name
+\char SIS_SVER= 'J5.2.3  '           / SIS SW VERsion
+\char CPT_VER = '3.0.95  '           / Channel Param Table FOS version
+\char CTD_VER = '3.0.94S '           / Cmded telemetry data version
+\char EXPDFLAG=                    F / (T/F) expedited DCE
+\char MISS_LCT=                    0 / Total Missed Line Cnt in this FITS
+\char MANCPKT =                    F / T if this FITS is Missing Ancillary Data
+\char MISSDATA=                    F / T if this FITS is Missing Image Data
+\char PAONUM  =                  530 / PAO Number
+\char CAMPAIGN= 'IRSX003100'         / Campaign
+\char DCEID   =             14551903 / Data-Collection-Event ID
+\char DCEINSID=              2539905 / DCE Instance ID
+\char DPID    =            327010307 / Data Product Instance ID
+\char PIPENUM =                  202 / Ensemble-information
+\char SOS_VER =                   1. / Data-Product Version
+\char PLVID   =                    8 / Pipeline Version ID
+\char CALID   =                    2 / CalTrans Version ID
+\char ORIGIN0 = 'JPL_FOS '           / site where RAW FITS files was written
+\char CREATOR0= 'J5.2.3  '           / SW system that created RAW FITS
+\char 
+\char SLCHINSQ=                  107 / Number of rows with poor SL stray light corrrec
+\char SLRUNCOR=                   17 / Number of rows with no SL stray light corrrecti
+\char GAIN1   =                  4.6 / e/DN conversion (readout channel 1)
+\char GAIN2   =                  4.6 / e/DN conversion (readout channel 2)
+\char GAIN3   =                  4.6 / e/DN conversion (readout channel 3)
+\char GAIN4   =                  4.6 / e/DN conversion (readout channel 4)
+\char BASECH1 =             31253.81 / Trimmed mean channel 1 signal in reference unil
+\char BASECH2 =             31064.78 / Trimmed mean channel 2 signal in reference unil
+\char BASECH3 =             33198.92 / Trimmed mean channel 3 signal in reference unil
+\char BASECH4 =             30621.04 / Trimmed mean channel 4 signal in reference unil
+\char 
+\char FBIDDARK=                 1024
+\char FBIDFLAT=                  511
+\char FBIDLNCR=                   22
+\char FBIDLNMD=                  236
+\char FBIDOMSK=                   30
+\char FBIDPMSK=                  353
+\char FBIDWSMP=                  526
+\char FBIDUMSK=                  241
+\char FBIDLMSK=                  274
+\char FBIDSLTC=                   21
+\char FBIDWSOF=                  529
+\char FBIDWSOM=                  532
+\char FBIDWSWA=                  523
+\char FBIDFLXC=                 1200
+\char FBIDFMSK=                   71
+\char FBIDPUMK=                  240
+\char FBIDCALS=                 1212
+\char FBIDLNSC=                  505
+\char CKWPROC = 'calkeywords'        / PERFORM CALKEYWORDS OPERATIONS
+\char CKWVERSN=                 3.40 / Version number of calkeywords program
+\char ACTUALN =                    4 / Ensemble-information
+\char EXPECTN =                    4 / Ensemble-information
+\char ENSID   =               238599 / Ensemble-information
+\char EPVERSN =                   10 / Ensemble-information
+\char CALTYPE = 'coadd   '           / Ensemble-information
+\char EPID    =              7245999 / SODB cal-table metadata-record index
+\char CKWCENF1=                  0.9 / Central trim fraction for mean (=0 for median)
+\char CKWCENF2=                  0.9 / Central trim fraction for standard deviation
+\char CKWNLFIL= 'calkeywords.nl'
+\char CKWILIST= 'inputlist_coadd'
+\char CKWKLIST= 'calkeywords_inputlist_coadd2d.dat'
+\char CKWEINFO= 'ensemble_info.txt'
+\char CKWOFIL1= 'coadd2d.fits'
+\char CKWLGFIL= 'stdout  '
+\HISTORY PROCESS 2010/09/25 00:16:45
+\HISTORY profile v3.6  (integrate (library) v1.31, nl_and_params v1.9)
+\HISTORY INFILE = coadd2d.fits
+\HISTORY WAVSAMP_FILE = ./cal/wavsamp.tbl
+\HISTORY FOVTABLE_FILE = ./cal/psf_fov.tbl
+\HISTORY N_CUTS = 1000,
+\HISTORY BMASKFILE = coadd2d_amask.fits
+\HISTORY BMASKFILE_FATAL = 29056,
+\HISTORY NAMELIST_FILE = ./cdf/profile.nl
+\int CHNLNUM = 0
+\int FOVID   = 32
+\int ORDER1 = 2
+\int ORDER2 = 3
+\char HISTORY PROCESS 2010/09/25 00:16:46
+\char HISTORY extract v5.6  (integrate (library) v1.31, nl_and_params v1.9)
+\char HISTORY INFILE = coadd2d.fits
+\char HISTORY RIDGE_TABLE = ridge.tbl
+\char HISTORY PSF_TABLE = ./cal/psf_fov.tbl
+\char HISTORY BMASKFILE = coadd2d_amask.fits
+\char HISTORY UNCERFILE = coadd2d_unc.fits
+\char HISTORY BMASKFATAL = 29056,
+\char HISTORY NORMALIZE = 1,
+\char HISTORY NAMELIST_FILE = ./cdf/extract.nl
+\char HISTORY HEIGHT1 = 0
+\char HISTORY FLAG_NAN_DROP = 1
+\float FCON_UNC = 124.500000
+\char HISTORY PROCESS 2010/09/25 00:16:47
+\char HISTORY irs_tune v3.4  (nl_and_params v1.9)
+\char HISTORY INFILE = extract.tbl
+\char HISTORY INFILE = ./cal/fluxcon.tbl
+\char HISTORY UP_DOWN_MODE = tune_down
+\char HISTORY APPLY = 3,
+\char HISTORY NAMELIST_FILE = ./cdf/irs_tune.nl
+|order        |wavelength         |flux_density        |error               |bit-flag            |
+|int          |real               |real                |real                |int                 |
+|             |                   |Jy                  |Jy                  |                    |
+ 2             5.12652             0.000901             0.000364             12416                
+ 2             5.15676             0.043197             0.007024             128                  
+ 2             5.18700             0.026036             0.003205             0                    
+ 2             5.21725             0.012997             0.002055             0                    
+ 2             5.24749             0.014934             0.002070             0                    
+ 2             5.27773             0.016291             0.002093             0                    
+ 2             5.30797             0.015362             0.001880             0                    
+ 2             5.33821             0.016043             0.001770             0                    
+ 2             5.36846             0.016752             0.001746             0                    
+ 2             5.39870             0.015808             0.001739             0                    
+ 2             5.42894             0.015476             0.001638             0                    
+ 2             5.45918             0.019025             0.001546             0                    
+ 2             5.48942             0.018807             0.001422             0                    
+ 2             5.51967             0.024764             0.001455             0                    
+ 2             5.54991             0.031855             0.001499             0                    
+ 2             5.58015             0.036691             0.001535             0                    
+ 2             5.61039             0.036275             0.001495             0                    
+ 2             5.64063             0.035410             0.001421             0                    
+ 2             5.67088             0.027991             0.001293             0                    
+ 2             5.70112             0.026605             0.001264             0                    
+ 2             5.73136             0.044220             0.001424             0                    
+ 2             5.76160             0.065698             0.001605             0                    
+ 2             5.79184             0.063052             0.001613             0                    
+ 2             5.82209             0.051305             0.001546             0                    
+ 2             5.85233             0.051792             0.001563             0                    
+ 2             5.88257             0.062840             0.001670             0                    
+ 2             5.91281             0.080314             0.001822             0                    
+ 2             5.94305             0.093351             0.001967             0                    
+ 2             5.97330             0.095990             0.002037             0                    
+ 2             6.00354             0.094782             0.002097             0                    
+ 2             6.03378             0.093179             0.002116             0                    
+ 2             6.06402             0.096307             0.002162             0                    
+ 2             6.09426             0.099697             0.002234             0                    
+ 2             6.12451             0.097180             0.002234             0                    
+ 2             6.15475             0.097985             0.002266             0                    
+ 2             6.18499             0.105234             0.002346             0                    
+ 2             6.21523             0.107417             0.002400             0                    
+ 2             6.24547             0.101211             0.002407             0                    
+ 2             6.27572             0.101544             0.002507             0                    
+ 2             6.30596             0.094769             0.002587             0                    
+ 2             6.33620             0.077384             0.002579             0                    
+ 2             6.36644             0.080688             0.002702             0                    
+ 2             6.39668             0.070508             0.002600             0                    
+ 2             6.42693             0.090234             0.002740             0                    
+ 2             6.45717             0.188184             0.003473             0                    
+ 2             6.48741             0.425334             0.004882             0                    
+ 2             6.51765             0.634031             0.005889             0                    
+ 2             6.54789             0.246912             0.003882             0                    
+ 2             6.57814             0.135479             0.003294             0                    
+ 2             6.60838             0.159481             0.003478             0                    
+ 2             6.63862             0.201834             0.003608             0                    
+ 2             6.66886             0.247952             0.003720             0                    
+ 2             6.69910             0.297813             0.003860             0                    
+ 2             6.72935             0.335743             0.003984             0                    
+ 2             6.75959             0.405556             0.004364             0                    
+ 2             6.78983             0.491787             0.004766             0                    
+ 2             6.82007             0.512527             0.004754             0                    
+ 2             6.85031             0.516162             0.004740             0                    
+ 2             6.88056             0.515721             0.004707             0                    
+ 2             6.91080             0.518819             0.004725             0                    
+ 2             6.94104             0.523550             0.004778             0                    
+ 2             6.97128             0.491972             0.004700             0                    
+ 2             7.00152             0.439387             0.004570             0                    
+ 2             7.03177             0.400580             0.004432             0                    
+ 2             7.06201             0.388786             0.004344             0                    
+ 2             7.09225             0.424392             0.004405             0                    
+ 2             7.12249             0.524638             0.004678             0                    
+ 2             7.15273             0.705865             0.005226             0                    
+ 2             7.18298             0.848105             0.005810             0                    
+ 2             7.21322             0.904728             0.006167             0                    
+ 2             7.24346             1.105801             0.006977             0                    
+ 2             7.27370             1.411152             0.008107             0                    
+ 2             7.30394             1.703064             0.009149             0                    
+ 2             7.33419             1.986481             0.010025             0                    
+ 2             7.36443             2.346449             0.010963             0                    
+ 2             7.39467             2.809225             0.012197             0                    
+ 2             7.42491             3.302853             0.013517             0                    
+ 2             7.45515             3.838973             0.015210             0                    
+ 2             7.48540             3.852612             0.015968             0                    
+ 2             7.51564             3.611037             0.016256             0                    
+ 2             7.54588             3.067936             0.015743             0                    
+ 2             7.57612             2.245378             0.014511             128                  
+ 2             7.60636             0.000462             0.000017             128                  
+ 3             7.33419             0.607572             0.003029             128                  
+ 3             7.39467             2.663723             0.009761             0                    
+ 3             7.45515             3.503976             0.011375             0                    
+ 3             7.51564             3.429674             0.011572             0                    
+ 3             7.57612             2.802268             0.010206             0                    
+ 3             7.63660             4.383831             0.012387             0                    
+ 3             7.69709             8.378385             0.018665             0                    
+ 3             7.75757             5.114708             0.014558             0                    
+ 3             7.81805             3.695021             0.012388             0                    
+ 3             7.87854             3.692387             0.012620             0                    
+ 3             7.93902             3.557568             0.012201             0                    
+ 3             7.99951             3.086390             0.011000             0                    
+ 3             8.05999             2.718894             0.009807             0                    
+ 3             8.12047             2.195116             0.008481             0                    
+ 3             8.18096             1.761185             0.007423             0                    
+ 3             8.24144             1.302311             0.006221             0                    
+ 3             8.30192             0.907467             0.005025             0                    
+ 3             8.36241             0.711510             0.004286             0                    
+ 3             8.42289             0.616881             0.003952             0                    
+ 3             8.48337             0.566838             0.004247             0                    
+ 3             8.54386             0.632362             0.005817             0                    
+ 3             8.60434             0.699970             0.008476             0                    
+ 3             8.66483             0.188100             0.002922             128                  
