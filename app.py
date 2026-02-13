@@ -132,7 +132,7 @@ with st.sidebar:
 - Works with: UV-only OR IR-only data
 - Output: Molecular composition predictions
 
-**🎨 Image Analysis** (Known Planets Only)
+**🎨 Graphical Analysis** (Known Planets Only)
 - Upload: Both UV and IR PKL files
 - Requires: Complete spectral data (UV+IR)
 - Output: Comparative fingerprint visualizations
@@ -149,7 +149,7 @@ with st.sidebar:
 st.subheader("Select Analysis Type")
 analysis_type = st.radio(
     "Choose the type of analysis:",
-    options=["Spectral Analysis (FITS/CSV)", "Image Analysis (PKL)"],
+    options=["Spectral Analysis (FITS/CSV)", "Graphical Analysis (PKL)"],
     horizontal=True,
     help="Spectral: Analyze UV/IR spectra using trained models | Image: Generate spectral barcode visualizations"
 )
@@ -172,7 +172,7 @@ if analysis_type == "Spectral Analysis (FITS/CSV)":
         st.info(f"**Mode**: Spectral Analysis | **File**: {uploaded_file.name}")
         modality = "spectral"
 
-else:  # Image Analysis
+else:  # Graphical Analysis
     st.subheader("🎨 Planet Data Upload (PKL)")
     st.caption("Upload planet PKL file(s) to generate spectral fingerprint visualizations")
     st.warning("⚠️ **Requires both UV and IR data** for complete spectral fingerprints. For unknown exoplanets with incomplete data, use Spectral Analysis mode instead.")
@@ -184,7 +184,7 @@ else:  # Image Analysis
     )
     if uploaded_files:
         file_names = ", ".join([f.name for f in uploaded_files])
-        st.info(f"**Mode**: Image Analysis (Spectral Barcodes) | **Files**: {file_names}")
+        st.info(f"**Mode**: Graphical Analysis (Spectral Barcodes) | **Files**: {file_names}")
         modality = "image"
         # For backward compatibility, treat as single file if only one uploaded
         uploaded_file = uploaded_files[0] if len(uploaded_files) == 1 else uploaded_files
@@ -221,7 +221,7 @@ if (modality == "spectral" and uploaded_file) or (modality == "image" and upload
                     input_path = tmp_paths[0]
                     uploaded_filenames = uploaded_file.name
                 else:
-                    # Multiple files for image analysis - save all to same temp directory
+                    # Multiple files for Graphical Analysis - save all to same temp directory
                     temp_dir = tempfile.mkdtemp()
                     for file in uploaded_files:
                         file_path = Path(temp_dir) / file.name
@@ -233,7 +233,7 @@ if (modality == "spectral" and uploaded_file) or (modality == "image" and upload
 
                 # Different execution paths for different modalities
                 if modality == "image":
-                    # DIRECT IMAGE ANALYSIS - Bypass pipeline, call agent directly
+                    # DIRECT Graphical Analysis - Bypass pipeline, call agent directly
                     with st.spinner("🎨 Generating Spectral Visualizations..."):
                         try:
                             # Call ImageModelAgent directly
@@ -310,7 +310,7 @@ if (modality == "spectral" and uploaded_file) or (modality == "image" and upload
         st.success("✅ Analysis Complete!")
 
         # ========================================================================
-        # IMAGE ANALYSIS DISPLAY (Simplified - just visualizations + chat)
+        # Graphical Analysis DISPLAY (Simplified - just visualizations + chat)
         # ========================================================================
         if current_modality == "image":
             st.header("📊 Spectral Fingerprint Visualizations")

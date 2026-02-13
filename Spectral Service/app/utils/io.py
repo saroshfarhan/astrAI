@@ -7,15 +7,50 @@ from typing import Tuple, Dict, Any
 def load_pkl_spectrum(path: str) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     with open(path, "rb") as f:
         obj = pickle.load(f)
-    # Handle both 'wavelength' and 'wave' keys
-    w = np.asarray(obj.get("wavelength", obj.get("wave")), dtype=float)
-    flux = np.asarray(obj["flux"], dtype=float)
+
+    # Handle structured numpy array (numpy.record) format - Earth PKL files
+    if isinstance(obj, np.ndarray) and obj.dtype.names:
+        # Extract field names
+        field_names = [name.lower() for name in obj.dtype.names]
+
+        # Find wavelength field
+        wl_candidates = ["wavelength", "wavelength_um", "wavelength_nm", "wave", "wl", "lambda"]
+        wl_field = next((name for name in obj.dtype.names if name.lower() in wl_candidates), None)
+
+        # Find flux field
+        fx_candidates = ["flux", "radiance", "radiance_final", "intensity", "reflectance"]
+        fx_field = next((name for name in obj.dtype.names if name.lower() in fx_candidates), None)
+
+        if wl_field and fx_field:
+            w = np.asarray(obj[wl_field], dtype=float)
+            flux = np.asarray(obj[fx_field], dtype=float)
+        else:
+            raise ValueError(f"Cannot detect wavelength/flux fields in structured array: {obj.dtype.names}")
+
+    # Handle dictionary format
+    elif isinstance(obj, dict):
+        # Try wavelength variations
+        wl_candidates = ["wavelength", "wavelength_um", "wave", "wl"]
+        w_key = next((k for k in wl_candidates if k in obj), None)
+
+        # Try flux variations
+        fx_candidates = ["flux", "radiance", "radiance_final", "intensity"]
+        f_key = next((k for k in fx_candidates if k in obj), None)
+
+        if w_key and f_key:
+            w = np.asarray(obj[w_key], dtype=float)
+            flux = np.asarray(obj[f_key], dtype=float)
+        else:
+            raise ValueError(f"Cannot detect wavelength/flux keys in dict: {list(obj.keys())}")
+
+    else:
+        raise ValueError(f"Unsupported PKL format: {type(obj)}")
 
     m = np.isfinite(w) & np.isfinite(flux)
     w, flux = w[m], flux[m]
     idx = np.argsort(w)
     w, flux = w[idx], flux[idx]
-    meta = {"target": obj.get("target", "unknown"), "notes": obj.get("notes", "")}
+    meta = {"target": "unknown", "notes": "loaded from PKL"}
     return w, flux, meta
 
 def load_fits_spectrum(path: str) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:

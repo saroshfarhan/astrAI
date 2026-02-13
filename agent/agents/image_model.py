@@ -162,13 +162,13 @@ class ImageModelAgent(BaseAgent):
                     "description": f"Dendrogram showing spectral similarity relationships"
                 })
 
-                # 4. Spectral overlay plot
-                overlay_fig = self._create_spectral_overlay(planet_data)
-                visualizations.append({
-                    "title": f"Normalized Spectra Overlay ({num_planets} Planets)",
-                    "figure": overlay_fig,
-                    "description": "All planet spectra overlaid for comparison"
-                })
+                # 4. Spectral overlay plot (COMMENTED OUT - not needed)
+                # overlay_fig = self._create_spectral_overlay(planet_data)
+                # visualizations.append({
+                #     "title": f"Normalized Spectra Overlay ({num_planets} Planets)",
+                #     "figure": overlay_fig,
+                #     "description": "All planet spectra overlaid for comparison"
+                # })
 
                 generation_time = time.time() - start_time
                 span.set_attribute("visualization_count", len(visualizations))
@@ -493,6 +493,19 @@ class ImageModelAgent(BaseAgent):
 
         ax.set_title("Spectral Fingerprint Distance (Cosine)", fontsize=12, pad=10)
         plt.colorbar(im, ax=ax, label="Distance")
+
+        # Add distance values in lower triangle only
+        n = len(planet_list)
+        for i in range(n):
+            for j in range(n):
+                if i > j:  # lower triangle only
+                    ax.text(j, i,
+                           f"{D[i, j]:.2f}",
+                           ha="center",
+                           va="center",
+                           color="black",
+                           fontsize=9)
+
         plt.tight_layout()
 
         return fig
