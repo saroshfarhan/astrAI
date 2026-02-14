@@ -40,7 +40,7 @@ class PipelineState(TypedDict, total=False):
     validation_flags: List[str]  # Quality flags (e.g., "LOW_CONFIDENCE")
     
     # Metadata and logging
-    metadata: Dict[str, Any]
+    metadata: Dict[str, Any]  # Now includes spectral_summary and spectral_features_description
     log_refs: Dict[str, str]
     errors: List[str]
     prompt_version: str

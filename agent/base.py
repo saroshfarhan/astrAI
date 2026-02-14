@@ -149,14 +149,68 @@ def log_agent_metrics(
 
 def validate_state_fields(state: PipelineState, required_fields: List[str]) -> None:
     """Validate that required fields are present in state.
-    
+
     Args:
         state: Pipeline state to validate
         required_fields: List of required field names
-        
+
     Raises:
         AgentError: If any required field is missing
     """
     missing = [field for field in required_fields if field not in state]
     if missing:
         raise AgentError(f"Missing required state fields: {missing}")
+
+
+def log_llm_usage(response: Any, agent_name: str, operation: str = "llm_call") -> None:
+    """Extract and log LLM token usage to MLflow.
+
+    This function extracts token usage metadata from Gemini/LangChain responses
+    and logs them as MLflow metrics for cost tracking and analysis.
+
+    Args:
+        response: LLM response object from langchain (must have usage_metadata)
+        agent_name: Name of the agent (e.g., "orchestrator", "reporter")
+        operation: Operation name for span attributes (default: "llm_call")
+
+    Logs:
+        - {agent_name}_input_tokens: Number of input/prompt tokens
+        - {agent_name}_output_tokens: Number of output/generated tokens
+        - {agent_name}_total_tokens: Total tokens used
+
+    Example:
+        >>> response = llm.invoke("Hello")
+        >>> log_llm_usage(response, "orchestrator", "routing_decision")
+        # Logs: orchestrator_input_tokens, orchestrator_output_tokens, etc.
+    """
+    try:
+        # Extract usage metadata from Gemini response
+        # Token usage is in response.usage_metadata (not response.response_metadata)
+        usage = getattr(response, 'usage_metadata', {})
+
+        input_tokens = usage.get('input_tokens', 0)
+        output_tokens = usage.get('output_tokens', 0)
+        total_tokens = usage.get('total_tokens', 0)
+
+        # Log metrics with agent prefix
+        mlflow.log_metric(f"{agent_name}_input_tokens", input_tokens)
+        mlflow.log_metric(f"{agent_name}_output_tokens", output_tokens)
+        mlflow.log_metric(f"{agent_name}_total_tokens", total_tokens)
+
+        # Also log to span attributes for detailed tracing
+        try:
+            span = mlflow.get_current_active_span()
+            if span:
+                span.set_attribute("input_tokens", input_tokens)
+                span.set_attribute("output_tokens", output_tokens)
+                span.set_attribute("total_tokens", total_tokens)
+                span.set_attribute("operation", operation)
+        except Exception:
+            pass  # Span operations are optional
+
+    except Exception as e:
+        # Don't fail on logging errors - just log the error
+        try:
+            mlflow.log_param(f"{agent_name}_token_logging_error", str(e)[:200])
+        except Exception:
+            pass  # Completely silent failure if MLflow not available

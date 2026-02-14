@@ -19,6 +19,7 @@ from utils.io import load_spectrum
 from utils.preprocess import resample_to_fixed, make_channels, crop_to_wavelength_range, IR_WAVELENGTH_RANGE
 from utils.fusion import fuse_uv_ir
 from utils.domain_detector import detect_domain, get_wavelength_unit
+from utils.spectral_parser import generate_spectral_summary
 
 router = APIRouter()
 
@@ -145,6 +146,28 @@ async def analyze_spectrum(file: UploadFile = File(...), top_k: int = 8):
         detected_domain = detect_domain(w, f)
         wavelength_unit = get_wavelength_unit(w)
 
+        # ---- GENERATE SPECTRAL SUMMARY (Universal Parser) ----
+        spectral_summary = None
+        try:
+            with mlflow.start_span(name="spectral_parsing") as sp_parse:
+                spectral_summary = generate_spectral_summary(w, f, top_features=5)
+                sp_parse.set_attribute("features_detected",
+                    len(spectral_summary.get("peaks", [])) +
+                    len(spectral_summary.get("valleys", [])) +
+                    len(spectral_summary.get("molecular_signatures", []))
+                )
+                # Log the natural language summary for debugging
+                try:
+                    mlflow.log_param("spectral_natural_language", spectral_summary.get("natural_language", "")[:500])
+                except Exception:
+                    pass
+        except Exception as e:
+            # Don't fail analysis if parsing fails
+            try:
+                mlflow.log_param("spectral_parsing_error", str(e)[:200])
+            except Exception:
+                pass
+
         try:
             mlflow.log_param("detected_domain", detected_domain)
             mlflow.log_param("wavelength_unit", wavelength_unit)
@@ -220,5 +243,6 @@ async def analyze_spectrum(file: UploadFile = File(...), top_k: int = 8):
         return AnalyzeSpectrumResponse(
             domain_used=domain_used,
             predictions=preds,
+            spectral_summary=spectral_summary,  # NEW: Include parsed spectral features
             debug=debug
         )

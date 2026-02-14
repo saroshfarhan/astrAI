@@ -128,6 +128,10 @@ Respond with JSON only:
                         ("human", json.dumps(context, default=str))
                     ])
 
+                    # Log token usage for cost tracking
+                    from ..base import log_llm_usage
+                    log_llm_usage(response, "orchestrator", "routing_decision")
+
                     # Parse LLM response (handle markdown-wrapped JSON)
                     content = response.content.strip()
 

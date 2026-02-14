@@ -78,11 +78,12 @@ class SpectralModelAgent(BaseAgent):
             pass
 
         # Call Spectral Service endpoint
+        spectral_summary = None
         try:
             with mlflow.start_span(name="spectral_service_request") as span:
                 start_time = time.time()
 
-                predictions = self._call_spectral_service(input_path)
+                predictions, spectral_summary = self._call_spectral_service(input_path)
 
                 request_time = time.time() - start_time
                 span.set_attribute("request_time_ms", int(request_time * 1000))
@@ -127,6 +128,12 @@ class SpectralModelAgent(BaseAgent):
 
         # Update state
         state["spectral_predictions"] = formatted_predictions
+
+        # Store spectral summary in metadata for LLM visibility
+        if spectral_summary:
+            state.setdefault("metadata", {})["spectral_summary"] = spectral_summary
+            # Also store the natural language description separately for easy access
+            state["metadata"]["spectral_features_description"] = spectral_summary.get("natural_language", "")
 
         # Log final summary
         try:
@@ -188,7 +195,17 @@ class SpectralModelAgent(BaseAgent):
             except Exception:
                 pass
 
-            return predictions
+            # Extract spectral summary (if available)
+            spectral_summary = result.get("spectral_summary")
+            if spectral_summary:
+                try:
+                    mlflow.log_param("spectral_summary_available", True)
+                    mlflow.log_param("spectral_features_natural_language",
+                                   spectral_summary.get("natural_language", "")[:500])
+                except Exception:
+                    pass
+
+            return predictions, spectral_summary
 
         except requests.exceptions.HTTPError as e:
             raise Exception(f"HTTP error from Spectral Service: {e.response.status_code} - {e.response.text}")

@@ -73,12 +73,22 @@ def configure_mlflow() -> None:
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
     mlflow.set_tracking_uri(tracking_uri)
     experiment = os.getenv("MLFLOW_EXPERIMENT_NAME", "ad-astrAI")
-    
+
     # Set experiment (create if not exists)
     try:
         mlflow.set_experiment(experiment)
     except Exception:
         print(f"Warning: Could not set MLflow experiment '{experiment}'")
+
+    # Enable LangChain autologging for GenAI monitoring
+    # This makes token usage visible in the GenAI apps & agents overview
+    try:
+        mlflow.langchain.autolog(
+            log_traces=True,  # Enable trace logging
+            silent=True       # Suppress verbose logging
+        )
+    except Exception as e:
+        print(f"Warning: Could not enable LangChain autologging: {e}")
 
 
 
@@ -252,7 +262,8 @@ def build_graph() -> Callable[[PipelineState], PipelineState]:
     # Compile with memory
     memory = MemorySaver()
     compiled = graph.compile(checkpointer=memory)
-    
+
+    @mlflow.trace(name="pipeline_execution", span_type="CHAIN")
     def runner(initial: PipelineState) -> PipelineState:
         """Run the compiled graph with MLflow tracking.
         
@@ -286,7 +297,7 @@ def build_graph() -> Callable[[PipelineState], PipelineState]:
             
             # Log end event
             log_mlflow("end", final_state, run.info.run_id)
-            
+
             # Log final metrics
             try:
                 mlflow.log_metric("pipeline_total_agents", len(final_state.get("active_agents", [])))
@@ -294,7 +305,46 @@ def build_graph() -> Callable[[PipelineState], PipelineState]:
                 mlflow.log_metric("pipeline_success", 1 if not final_state.get("errors") else 0)
             except Exception:
                 pass
-            
+
+            # Aggregate token usage across all agents
+            try:
+                # Get all metrics logged in this run
+                mlflow_client = MlflowClient()
+                run_data = mlflow_client.get_run(run.info.run_id)
+                metrics = run_data.data.metrics
+
+                # Sum tokens by category
+                total_input_tokens = sum(v for k, v in metrics.items() if k.endswith('_input_tokens'))
+                total_output_tokens = sum(v for k, v in metrics.items() if k.endswith('_output_tokens'))
+                total_tokens = sum(v for k, v in metrics.items() if k.endswith('_total_tokens'))
+
+                # Log aggregated metrics
+                if total_tokens > 0:  # Only log if we actually used LLMs
+                    mlflow.log_metric("pipeline_total_input_tokens", total_input_tokens)
+                    mlflow.log_metric("pipeline_total_output_tokens", total_output_tokens)
+                    mlflow.log_metric("pipeline_total_tokens", total_tokens)
+
+                    # CRITICAL: Set token usage on root span for MLflow Overview tab
+                    # MLflow's Overview expects tokenUsage attribute on the root trace span
+                    try:
+                        root_span = mlflow.get_current_active_span()
+                        if root_span:
+                            # Set token usage in the format MLflow Overview expects
+                            root_span.set_attribute("tokenUsage", {
+                                "input_tokens": int(total_input_tokens),
+                                "output_tokens": int(total_output_tokens),
+                                "total_tokens": int(total_tokens)
+                            })
+                            # Also set individual fields for compatibility
+                            root_span.set_attribute("input_tokens", int(total_input_tokens))
+                            root_span.set_attribute("output_tokens", int(total_output_tokens))
+                            root_span.set_attribute("total_tokens", int(total_tokens))
+                    except Exception:
+                        pass  # Span operations are optional
+
+            except Exception:
+                pass  # Don't fail pipeline on metrics aggregation
+
             return final_state
     
     return runner

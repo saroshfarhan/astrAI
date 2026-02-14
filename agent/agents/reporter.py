@@ -40,10 +40,10 @@ class ReporterAgent(BaseAgent):
     
     def process(self, state: PipelineState) -> PipelineState:
         """Generate natural language report.
-        
+
         Args:
             state: Pipeline state with validated_results
-            
+
         Returns:
             Updated state with report in metadata
         """
@@ -52,6 +52,11 @@ class ReporterAgent(BaseAgent):
         validation_flags = state.get("validation_flags", [])
         inference_results = state.get("inference_results", {})
         kb = state.get("knowledge_base", {})
+
+        # NEW: Get spectral summary if available
+        metadata = state.get("metadata", {})
+        spectral_summary = metadata.get("spectral_summary")
+        spectral_features_desc = metadata.get("spectral_features_description", "")
         
         # Log inputs
         try:
@@ -66,7 +71,10 @@ class ReporterAgent(BaseAgent):
             return state
         
         # Prepare report context
-        context = self._prepare_context(validated_results, validation_flags, inference_results, kb)
+        context = self._prepare_context(
+            validated_results, validation_flags, inference_results, kb,
+            spectral_summary, spectral_features_desc
+        )
         
         # Generate report using LLM
         try:
@@ -121,16 +129,20 @@ class ReporterAgent(BaseAgent):
         validated_results: list,
         validation_flags: list,
         inference_results: dict,
-        kb: dict
+        kb: dict,
+        spectral_summary: dict = None,
+        spectral_features_desc: str = ""
     ) -> Dict[str, Any]:
         """Prepare context for report generation.
-        
+
         Args:
             validated_results: Validated predictions
             validation_flags: Validation flags
             inference_results: Inference results
             kb: Knowledge Base
-            
+            spectral_summary: Parsed spectral features (NEW)
+            spectral_features_desc: Natural language spectral description (NEW)
+
         Returns:
             Report context dictionary
         """
@@ -142,7 +154,7 @@ class ReporterAgent(BaseAgent):
         multi_modal = [p for p in validated_results if p.get("multi_modal", False)]
         
         summary = inference_results.get("summary", {})
-        
+
         return {
             "num_elements": len(validated_results),
             "unique_elements": summary.get("unique_elements", len(validated_results)),
@@ -153,18 +165,33 @@ class ReporterAgent(BaseAgent):
             "num_caveats": len(validation_flags),
             "avg_confidence": summary.get("avg_confidence", 0),
             "summary": summary,
-            "kb": kb
+            "kb": kb,
+            # NEW: Include spectral parsing results
+            "spectral_summary": spectral_summary,
+            "spectral_features_desc": spectral_features_desc
         }
     
     def _generate_report(self, context: Dict[str, Any]) -> str:
         """Generate report using LLM.
-        
+
         Args:
             context: Report context
-            
+
         Returns:
             Generated report text
         """
+        # NEW: Include spectral features in the prompt
+        spectral_context = ""
+        if context.get('spectral_features_desc'):
+            spectral_context = f"""
+
+SPECTRAL DATA ANALYSIS (Raw Features Detected):
+{context['spectral_features_desc']}
+
+Note: The LLM can now "see" the actual spectral features (peaks, valleys, absorption lines)
+instead of just making educated guesses from the filename.
+"""
+
         prompt = f"""Generate a concise scientific report for astronomical element detection analysis.
 
 Context:
@@ -175,21 +202,27 @@ Context:
 - Multi-modal detections: {len(context['multi_modal'])}
 - Average confidence: {context['avg_confidence']:.1%}
 - Validation flags: {context['num_caveats']}
-
+{spectral_context}
 High confidence elements:
 {json.dumps([{'element': p['element'], 'confidence': p['probability'], 'source': p.get('source', 'unknown')} for p in context['high_confidence'][:5]], indent=2)}
 
 Report requirements:
-1. Start with a brief summary (2-3 sentences)
-2. List detected elements with confidence levels
-3. Highlight multi-modal detections (detected by both spectral and image analysis)
-4. Include caveats for low-confidence predictions
-5. Keep it concise and scientific
-6. Use proper astronomical terminology
+1. Start with a brief summary referencing the SPECTRAL DATA ANALYSIS if available (2-3 sentences)
+2. Mention key spectral features detected (absorption valleys, emission peaks, molecular signatures)
+3. List detected elements with confidence levels and how they correlate with observed spectral features
+4. Highlight multi-modal detections (detected by both spectral and image analysis)
+5. Include caveats for low-confidence predictions
+6. Keep it concise and scientific
+7. Use proper astronomical terminology
 
 Generate the report:"""
 
         response = self.llm.invoke(prompt)
+
+        # Log token usage for cost tracking
+        from ..base import log_llm_usage
+        log_llm_usage(response, "reporter", "report_generation")
+
         return response.content
     
     def _generate_fallback_report(self, context: Dict[str, Any]) -> str:
