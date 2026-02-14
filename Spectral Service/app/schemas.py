@@ -12,6 +12,7 @@ class Prediction(BaseModel):
 class AnalyzeSpectrumResponse(BaseModel):
     domain_used: Domain
     predictions: List[Prediction]
+    spectral_summary: Optional[Dict[str, Any]] = None  # NEW: Parsed spectral features for LLM visibility
     debug: Optional[Dict[str, Any]] = None
 
 class AnalyzePathRequest(BaseModel):
